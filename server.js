@@ -6,7 +6,7 @@ const xml2js = require('xml2js');
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '1.3.1',
+    version: '1.3.2',
     name: 'Webshare Anime',
     description: 'Anime z Webshare.cz',
     resources: ['stream'],
@@ -375,12 +375,15 @@ builder.defineStreamHandler(async (args) => {
             // Použijeme jen první (hlavní) název pro rychlost
             const mainName = latinNames[0];
             
+            // Vyčistíme speciální znaky z názvu
+            const cleanName = mainName.replace(/[!?:\*]/g, '');
+            
             if (args.type === 'series' && episode) {
                 const seasonEp = `S${String(season).padStart(2, '0')}E${String(episode).padStart(2, '0')}`;
-                searchQueries.push(`${mainName} ${seasonEp}`);
+                searchQueries.push(`${cleanName} ${seasonEp}`);
             } else {
                 // Žádné číslo epizody - hledáme jen název
-                searchQueries.push(mainName);
+                searchQueries.push(cleanName);
             }
         } else if (args.id.startsWith('tt')) {
             const parts = args.id.split(':');
@@ -440,20 +443,23 @@ builder.defineStreamHandler(async (args) => {
                     const seasonEp = `S${String(season).padStart(2, '0')}E${String(episode).padStart(2, '0')}`;
                     // Použijeme jen první 3 názvy (romaji + english + hlavní synonym)
                     for (const name of names.slice(0, 3)) {
-                        searchQueries.push(`${name} ${seasonEp}`);
+                        // Vyčistíme speciální znaky
+                        const cleanName = name.replace(/[!?:\*]/g, '');
+                        searchQueries.push(`${cleanName} ${seasonEp}`);
                     }
                 } else {
                     // Jen první 3 názvy
-                    searchQueries = names.slice(0, 3);
+                    searchQueries = names.slice(0, 3).map(n => n.replace(/[!?:\*]/g, ''));
                 }
             } else {
                 // Jen jeden název (z Cinemeta) - použijeme jen ten
                 const mainName = names[0];
+                const cleanName = mainName.replace(/[!?:\*]/g, '');
                 if (args.type === 'series' && season && episode) {
                     const seasonEp = `S${String(season).padStart(2, '0')}E${String(episode).padStart(2, '0')}`;
-                    searchQueries.push(`${mainName} ${seasonEp}`);
+                    searchQueries.push(`${cleanName} ${seasonEp}`);
                 } else {
-                    searchQueries.push(mainName);
+                    searchQueries.push(cleanName);
                 }
             }
         } else {
