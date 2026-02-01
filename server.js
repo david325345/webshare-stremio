@@ -270,11 +270,11 @@ builder.defineStreamHandler(async (args) => {
         let searchQueries = [];
         
         if (args.id.startsWith('kitsu:')) {
-            // Kitsu ID
+            // Kitsu ID formát: kitsu:ID:episode (3 části, sezona je vždy 1)
             const parts = args.id.split(':');
             const kitsuId = parts[1];
-            const season = parts[2];
-            const episode = parts[3];
+            const episode = parts[2];
+            const season = 1; // Kitsu nemá sezony, vždy 1
 
             // Získáme názvy z Kitsu API
             const names = await getKitsuNames(kitsuId);
@@ -287,7 +287,7 @@ builder.defineStreamHandler(async (args) => {
             }
 
             // Pro každý název vytvoříme více search variant pro Kitsu
-            if (args.type === 'series' && season && episode) {
+            if (args.type === 'series' && episode) {
                 const seasonEp = `S${String(season).padStart(2, '0')}E${String(episode).padStart(2, '0')}`;
                 const seasonOnly = `S${String(season).padStart(2, '0')}`;
                 
@@ -364,11 +364,11 @@ builder.defineStreamHandler(async (args) => {
             const parts = args.id.split(':');
             let targetSeason, targetEpisode;
             
-            // Kitsu formát: kitsu:ID:season:episode (4 části)
+            // Kitsu formát: kitsu:ID:episode (3 části, sezona vždy 1)
             // IMDb formát: tt:season:episode (3 části)
             if (parts[0].startsWith('kitsu')) {
-                targetSeason = parseInt(parts[2]);
-                targetEpisode = parseInt(parts[3]);
+                targetSeason = 1;
+                targetEpisode = parseInt(parts[2]);
             } else {
                 targetSeason = parseInt(parts[1]);
                 targetEpisode = parseInt(parts[2]);
