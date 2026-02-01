@@ -1,9 +1,11 @@
 const axios = require('axios');
 const NodeCache = require('node-cache');
 const express = require('express');
+const xml2js = require('xml2js');
 
 const tokenCache = new NodeCache({ stdTTL: 3600 });
 const searchCache = new NodeCache({ stdTTL: 600 });
+const parser = new xml2js.Parser();
 
 class WebshareAPI {
     constructor(username, password) {
@@ -21,13 +23,22 @@ class WebshareAPI {
             return cached;
         }
 
-        const response = await axios.post(`${this.baseUrl}/login/`, {
-            username: this.username,
-            password: this.password,
-            keep_logged_in: true
+        const params = new URLSearchParams();
+        params.append('username_or_email', this.username);
+        params.append('password', this.password);
+        params.append('keep_logged_in', '1');
+
+        const response = await axios.post(`${this.baseUrl}/login/`, params, {
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
         });
 
-        this.token = response.data.token;
+        const result = await parser.parseStringPromise(response.data);
+        
+        if (result.response.status[0] !== 'OK') {
+            throw new Error('Login failed');
+        }
+
+        this.token = result.response.token[0];
         tokenCache.set(cacheKey, this.token);
         return this.token;
     }
@@ -40,20 +51,28 @@ class WebshareAPI {
         if (cached) return cached;
 
         try {
-            const response = await axios.post(
-                `${this.baseUrl}/search/`,
-                { what: query, category: 'video', sort: 'largest' },
-                { headers: { 'Authorization': `Token ${this.token}` } }
-            );
-            searchCache.set(cacheKey, response.data);
-            return response.data;
-        } catch (error) {
-            if (error.response?.status === 401) {
-                this.token = null;
-                tokenCache.del(`token_${this.username}`);
-                return this.search(query);
+            const params = new URLSearchParams();
+            params.append('what', query);
+            params.append('category', 'video');
+            params.append('sort', 'largest');
+            params.append('wst', this.token);
+
+            const response = await axios.post(`${this.baseUrl}/search/`, params, {
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
+            });
+
+            const result = await parser.parseStringPromise(response.data);
+            
+            if (result.response.status[0] !== 'OK') {
+                return [];
             }
-            return null;
+
+            const files = result.response.file || [];
+            searchCache.set(cacheKey, files);
+            return files;
+        } catch (error) {
+            console.error('Search error:', error.message);
+            return [];
         }
     }
 
@@ -61,18 +80,23 @@ class WebshareAPI {
         if (!this.token) await this.login();
 
         try {
-            const response = await axios.post(
-                `${this.baseUrl}/file_link/`,
-                { ident: ident },
-                { headers: { 'Authorization': `Token ${this.token}` } }
-            );
-            return response.data.link;
-        } catch (error) {
-            if (error.response?.status === 401) {
-                this.token = null;
-                tokenCache.del(`token_${this.username}`);
-                return this.getFileLink(ident);
+            const params = new URLSearchParams();
+            params.append('ident', ident);
+            params.append('wst', this.token);
+
+            const response = await axios.post(`${this.baseUrl}/file_link/`, params, {
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
+            });
+
+            const result = await parser.parseStringPromise(response.data);
+            
+            if (result.response.status[0] !== 'OK') {
+                return null;
             }
+
+            return result.response.link[0];
+        } catch (error) {
+            console.error('File link error:', error.message);
             return null;
         }
     }
@@ -94,27 +118,35 @@ async function getStreams(username, password, type, id) {
         console.log('Searching for:', query);
         const results = await api.search(query);
         
-        if (!results || !results.length) {
+        if (!results || results.length === 0) {
+            console.log('No results found');
             return { streams: [] };
         }
 
+        console.log(`Found ${results.length} results`);
+        
         const streams = await Promise.all(
             results.slice(0, 10).map(async (file) => {
                 try {
-                    const link = await api.getFileLink(file.ident);
+                    const ident = file.ident[0];
+                    const name = file.name ? file.name[0] : (file.n ? file.n[0] : 'Unknown');
+                    const link = await api.getFileLink(ident);
+                    
                     return link ? {
                         name: `Webshare`,
-                        title: file.name,
+                        title: name,
                         url: link
                     } : null;
                 } catch (error) {
-                    console.error('Error getting link:', error.message);
+                    console.error('Error processing file:', error.message);
                     return null;
                 }
             })
         );
 
-        return { streams: streams.filter(s => s !== null) };
+        const validStreams = streams.filter(s => s !== null);
+        console.log(`Returning ${validStreams.length} streams`);
+        return { streams: validStreams };
     } catch (error) {
         console.error('Stream error:', error.message);
         return { streams: [] };
@@ -288,7 +320,7 @@ app.get('/:creds/stream/:type/:id.json', async (req, res) => {
         const result = await getStreams(username, password, req.params.type, req.params.id.replace('.json', ''));
         res.json(result);
     } catch (error) {
-        console.error('Stream error:', error);
+        console.error('Stream endpoint error:', error);
         res.json({ streams: [] });
     }
 });
