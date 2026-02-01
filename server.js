@@ -6,7 +6,7 @@ const xml2js = require('xml2js');
 
 const manifest = {
     id: 'cz.webshare.anime',
-    version: '1.0.2',
+    version: '1.0.3',
     name: 'Webshare Anime',
     description: 'Anime z Webshare.cz',
     resources: ['stream'],
@@ -57,7 +57,7 @@ async function login(username, saltedPassword) {
 
 async function search(query, token) {
     console.log('Searching:', query);
-    const params = `what=${encodeURIComponent(query)}&category=video&limit=100&wst=${encodeURIComponent(token)}`;
+    const params = `what=${encodeURIComponent(query)}&category=video&limit=50&wst=${encodeURIComponent(token)}`;
     const resp = await needle('post', 'https://webshare.cz/api/search/', params, { headers });
     
     const files = resp.body.children.filter(el => el.name == 'file');
@@ -282,18 +282,14 @@ builder.defineStreamHandler(async (args) => {
                 return { streams: [] };
             }
 
-            // Pro každý název vytvoříme více search variant pro Kitsu
+            // Použijeme jen první (hlavní) název pro rychlost
+            const mainName = names[0];
+            
             if (args.type === 'series' && episode) {
                 const seasonEp = `S${String(season).padStart(2, '0')}E${String(episode).padStart(2, '0')}`;
-                const seasonOnly = `S${String(season).padStart(2, '0')}`;
-                
-                for (const name of names) {
-                    searchQueries.push(`${name} ${seasonEp}`);
-                    searchQueries.push(`${name} ${seasonOnly}`);
-                    searchQueries.push(name);
-                }
+                searchQueries.push(`${mainName} ${seasonEp}`);
             } else {
-                searchQueries = names;
+                searchQueries.push(mainName);
             }
         } else if (args.id.startsWith('tt')) {
             const parts = args.id.split(':');
@@ -317,18 +313,14 @@ builder.defineStreamHandler(async (args) => {
                 return { streams: [] };
             }
 
-            // Pro každý název vytvoříme více search variant pro IMDb
+            // Použijeme jen první (hlavní) název pro rychlost
+            const mainName = names[0];
+            
             if (args.type === 'series' && season && episode) {
                 const seasonEp = `S${String(season).padStart(2, '0')}E${String(episode).padStart(2, '0')}`;
-                const seasonOnly = `S${String(season).padStart(2, '0')}`;
-                
-                for (const name of names) {
-                    searchQueries.push(`${name} ${seasonEp}`);
-                    searchQueries.push(`${name} ${seasonOnly}`);
-                    searchQueries.push(name);
-                }
+                searchQueries.push(`${mainName} ${seasonEp}`);
             } else {
-                searchQueries = names;
+                searchQueries.push(mainName);
             }
         } else {
             searchQueries = [args.id];
@@ -431,58 +423,53 @@ builder.defineStreamHandler(async (args) => {
             return { streams: [] };
         }
 
-        // Vytvoříme streamy pro každý výsledek (max 30 pro rychlost)
-        const filesToProcess = filteredResults.slice(0, 30);
+        // Vytvoříme streamy pro každý výsledek (max 10 pro rychlost)
+        const filesToProcess = filteredResults.slice(0, 10);
         console.log(`Processing ${filesToProcess.length} files for links...`);
         
         const streams = [];
         
-        // Zpracujeme soubory po dávkách (5 najednou) aby to nebyl timeout
-        for (let i = 0; i < filesToProcess.length; i += 5) {
-            const batch = filesToProcess.slice(i, i + 5);
-            const batchStreams = await Promise.all(
-                batch.map(async (file) => {
-                    try {
-                        const link = await getFileLink(file.ident, token);
-                        if (link) {
-                            const quality = detectQuality(file.name);
-                            
-                            // Sestavíme popis s metadaty
-                            let description = file.name;
-                            description += `\n💾 ${formatSize(file.size)}`;
-                            if (quality.resolution) description += ` | 📺 ${quality.resolution}`;
-                            if (quality.codec) description += ` | 🎬 ${quality.codec}`;
-                            if (quality.audio) description += ` | 🔊 ${quality.audio}`;
-                            if (quality.source) description += ` | 📀 ${quality.source}`;
-                            description += `\n👍 ${file.positive_votes} | 👎 ${file.negative_votes}`;
-                            
-                            return {
-                                name: `Webshare ${quality.resolution}`,
-                                title: file.name,
-                                url: link,
-                                description: description,
-                                behaviorHints: {
-                                    bingeGroup: 'webshare-anime',
-                                    videoSize: file.size,
-                                    filename: file.name
-                                }
-                            };
+        // Zpracujeme soubory najednou (ne po dávkách - rychlejší)
+        const streamPromises = filesToProcess.map(async (file) => {
+            try {
+                const link = await getFileLink(file.ident, token);
+                if (link) {
+                    const quality = detectQuality(file.name);
+                    
+                    // Sestavíme popis s metadaty
+                    let description = file.name;
+                    description += `\n💾 ${formatSize(file.size)}`;
+                    if (quality.resolution) description += ` | 📺 ${quality.resolution}`;
+                    if (quality.codec) description += ` | 🎬 ${quality.codec}`;
+                    if (quality.audio) description += ` | 🔊 ${quality.audio}`;
+                    if (quality.source) description += ` | 📀 ${quality.source}`;
+                    description += `\n👍 ${file.positive_votes} | 👎 ${file.negative_votes}`;
+                    
+                    return {
+                        name: `Webshare ${quality.resolution}`,
+                        title: file.name,
+                        url: link,
+                        description: description,
+                        behaviorHints: {
+                            bingeGroup: 'webshare-anime',
+                            videoSize: file.size,
+                            filename: file.name
                         }
-                        return null;
-                    } catch (error) {
-                        console.error('Error getting link:', error.message);
-                        return null;
-                    }
-                })
-            );
-            
-            streams.push(...batchStreams.filter(s => s !== null));
-            console.log(`Processed batch ${Math.floor(i/5) + 1}, total streams: ${streams.length}`);
-        }
+                    };
+                }
+                return null;
+            } catch (error) {
+                console.error('Error getting link:', error.message);
+                return null;
+            }
+        });
         
-        console.log(`Returning ${streams.length} streams to Stremio`);
+        const allStreams = await Promise.all(streamPromises);
+        const validStreams = allStreams.filter(s => s !== null);
+        
+        console.log(`Returning ${validStreams.length} streams to Stremio`);
         return { 
-            streams,
+            streams: validStreams,
             cacheMaxAge: 0 // Vypneme cache pro streamy
         };
     } catch (error) {
