@@ -3,7 +3,6 @@ const needle = require('needle');
 const md5 = require('cryptmd5');
 const sha1 = require('sha1');
 const xml2js = require('xml2js');
-const parser = new xml2js.Parser();
 
 const manifest = {
     id: 'cz.webshare.anime',
@@ -85,35 +84,93 @@ async function getFileLink(ident, token) {
     return null;
 }
 
-const TMDB_API_KEY = '0eefece0676icing90e9977c1e47c9dd'; // Free TMDB API key
-
-async function getShowName(type, id) {
-    try {
-        const baseId = id.split(':')[0];
-        
-        // Pokud je to IMDb ID (tt...), použijeme TMDB find endpoint
-        if (baseId.startsWith('tt')) {
-            const tmdbType = type === 'series' ? 'tv_results' : 'movie_results';
-            const url = `https://api.themoviedb.org/3/find/${baseId}?api_key=${TMDB_API_KEY}&external_source=imdb_id`;
-            const resp = await needle('get', url);
-            
-            if (resp.body && resp.body[tmdbType] && resp.body[tmdbType].length > 0) {
-                const result = resp.body[tmdbType][0];
-                return type === 'series' ? result.name : result.title;
+// AniList GraphQL API pro získání všech variant názvů anime
+async function getAnimeNames(imdbId) {
+    const query = `
+    query ($idMal: Int) {
+        Media(idMal: $idMal, type: ANIME) {
+            title {
+                romaji
+                english
+                native
             }
+            synonyms
         }
+    }`;
+
+    try {
+        // Nejdřív musíme získat MAL ID z IMDb ID pomocí mapping databáze
+        const malId = await getMALfromIMDb(imdbId);
+        if (!malId) return [];
+
+        const variables = { idMal: malId };
         
-        // Fallback na Cinemeta
-        const cinemataUrl = `https://v3-cinemeta.strem.io/meta/${type}/${baseId}.json`;
-        const resp = await needle('get', cinemataUrl);
-        
-        if (resp.body && resp.body.meta && resp.body.meta.name) {
-            return resp.body.meta.name;
+        const resp = await needle('post', 'https://graphql.anilist.co', {
+            query,
+            variables
+        }, {
+            json: true
+        });
+
+        if (resp.body && resp.body.data && resp.body.data.Media) {
+            const media = resp.body.data.Media;
+            const names = [];
+            
+            // Přidáme všechny varianty názvů
+            if (media.title.romaji) names.push(media.title.romaji);
+            if (media.title.english) names.push(media.title.english);
+            if (media.title.native) names.push(media.title.native);
+            if (media.synonyms) names.push(...media.synonyms);
+            
+            // Odstraníme duplicity
+            return [...new Set(names)];
         }
     } catch (error) {
-        console.error('Error getting show name:', error.message);
+        console.error('Error getting anime names from AniList:', error.message);
+    }
+    
+    return [];
+}
+
+// Pomocná funkce pro získání MAL ID z IMDb ID
+async function getMALfromIMDb(imdbId) {
+    try {
+        // Použijeme anime-offline-database mapping
+        const resp = await needle('get', 'https://raw.githubusercontent.com/manami-project/anime-offline-database/master/anime-offline-database-minified.json');
+        
+        if (resp.body && resp.body.data) {
+            const anime = resp.body.data.find(a => 
+                a.sources && a.sources.some(s => s.includes(imdbId))
+            );
+            
+            if (anime && anime.sources) {
+                const malSource = anime.sources.find(s => s.includes('myanimelist.net'));
+                if (malSource) {
+                    const malId = malSource.match(/anime\/(\d+)/);
+                    return malId ? parseInt(malId[1]) : null;
+                }
+            }
+        }
+    } catch (error) {
+        console.error('Error getting MAL ID:', error.message);
     }
     return null;
+}
+
+// Fallback na Cinemeta
+async function getCinemetaName(type, id) {
+    try {
+        const baseId = id.split(':')[0];
+        const url = `https://v3-cinemeta.strem.io/meta/${type}/${baseId}.json`;
+        const resp = await needle('get', url);
+        
+        if (resp.body && resp.body.meta && resp.body.meta.name) {
+            return [resp.body.meta.name];
+        }
+    } catch (error) {
+        console.error('Error getting name from Cinemeta:', error.message);
+    }
+    return [];
 }
 
 builder.defineStreamHandler(async (args) => {
@@ -127,47 +184,65 @@ builder.defineStreamHandler(async (args) => {
         const saltedPassword = await saltPassword(username, password);
         const token = await login(username, saltedPassword);
 
-        // Vytvoříme vyhledávací dotaz
-        let query = '';
+        // Získáme všechny varianty názvů
+        let searchQueries = [];
         
-        // Pokud máme ID ve formátu tt1234567:1:1, získáme název z TMDB
-        if (args.id.startsWith('tt') || args.id.startsWith('kitsu')) {
+        if (args.id.startsWith('tt')) {
             const parts = args.id.split(':');
+            const imdbId = parts[0];
             const season = parts[1];
             const episode = parts[2];
 
-            // Získáme název anime z TMDB
-            const showName = await getShowName(args.type, args.id);
-            console.log('Show name from TMDB:', showName);
+            // Získáme všechny názvy z AniList
+            let names = await getAnimeNames(imdbId);
             
-            if (showName) {
-                // Pro sérii přidáme season/episode
-                if (args.type === 'series' && season && episode) {
-                    query = `${showName} S${String(season).padStart(2, '0')}E${String(episode).padStart(2, '0')}`;
-                } else {
-                    // Pro filmy použijeme jen název
-                    query = showName;
-                }
-            } else {
-                // Fallback pokud nezískáme název
-                console.log('Could not get show name, returning empty');
+            // Pokud AniList nevrátí nic, zkusíme Cinemeta
+            if (names.length === 0) {
+                console.log('AniList returned no names, trying Cinemeta');
+                names = await getCinemetaName(args.type, args.id);
+            }
+
+            console.log('Found names:', names);
+
+            if (names.length === 0) {
+                console.log('No names found, returning empty');
                 return { streams: [] };
             }
+
+            // Pro každý název vytvoříme search query
+            if (args.type === 'series' && season && episode) {
+                const seasonEp = `S${String(season).padStart(2, '0')}E${String(episode).padStart(2, '0')}`;
+                searchQueries = names.map(name => `${name} ${seasonEp}`);
+            } else {
+                searchQueries = names;
+            }
         } else {
-            // Přímé vyhledávání
-            query = args.id;
+            searchQueries = [args.id];
         }
 
-        console.log('Searching for:', query);
-        const results = await search(query, token);
+        console.log('Search queries:', searchQueries);
 
-        if (!results || results.length === 0) {
+        // Vyhledáme pomocí všech variant názvů
+        const allResults = await Promise.all(
+            searchQueries.map(query => search(query, token))
+        );
+
+        // Sloučíme výsledky a odstraníme duplicity podle ident
+        const uniqueResults = {};
+        allResults.flat().forEach(result => {
+            uniqueResults[result.ident] = result;
+        });
+        const results = Object.values(uniqueResults);
+
+        if (results.length === 0) {
             return { streams: [] };
         }
 
+        console.log(`Found ${results.length} unique results`);
+
         // Vytvoříme streamy pro každý výsledek
         const streams = await Promise.all(
-            results.slice(0, 10).map(async (file) => {
+            results.slice(0, 20).map(async (file) => {
                 try {
                     const link = await getFileLink(file.ident, token);
                     if (link) {
@@ -190,7 +265,7 @@ builder.defineStreamHandler(async (args) => {
 
         return { streams: streams.filter(s => s !== null) };
     } catch (error) {
-        console.error('Stream handler error:', error.message);
+        console.error('Stream handler error:', error.message, error.stack);
         return { streams: [] };
     }
 });
