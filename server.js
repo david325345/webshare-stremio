@@ -58,13 +58,10 @@ class WebshareAPI {
         }
 
         try {
-            const salt = await this.getSalt();
-            const { password, digest } = this.hashPassword(this.password, salt);
-
+            // Zkusíme jednoduchou metodu s plain heslem
             const params = new URLSearchParams();
             params.append('username_or_email', this.username);
-            params.append('password', password);
-            params.append('digest', digest);
+            params.append('password', this.password);
             params.append('keep_logged_in', '1');
 
             const response = await axios.post(`${this.baseUrl}/login/`, params, {
@@ -73,13 +70,16 @@ class WebshareAPI {
 
             const result = await parser.parseStringPromise(response.data);
             
+            console.log('Login response:', JSON.stringify(result, null, 2));
+            
             if (result.response.status[0] !== 'OK') {
                 console.error('Login failed:', result.response);
-                throw new Error('Login failed');
+                throw new Error('Login failed: ' + result.response.message[0]);
             }
 
             this.token = result.response.token[0];
             tokenCache.set(cacheKey, this.token);
+            console.log('Login successful, token:', this.token.substring(0, 10) + '...');
             return this.token;
         } catch (error) {
             console.error('Login error:', error.message);
