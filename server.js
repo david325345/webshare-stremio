@@ -5,8 +5,8 @@ const sha1 = require('sha1');
 const xml2js = require('xml2js');
 
 const manifest = {
-    id: 'cz.webshare.anime',
-    version: '1.0.3',
+    id: 'com.webshare.anime',
+    version: '1.0.0',
     name: 'Webshare Anime',
     description: 'Anime z Webshare.cz',
     resources: ['stream'],
