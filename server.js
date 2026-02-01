@@ -6,7 +6,7 @@ const xml2js = require('xml2js');
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '1.0.4',
+    version: '1.1.0',
     name: 'Webshare Anime',
     description: 'Anime z Webshare.cz',
     resources: ['stream'],
@@ -323,43 +323,62 @@ builder.defineStreamHandler(async (args) => {
             const season = parts[1];
             const episode = parts[2];
 
-            // Získáme všechny názvy z AniList
+            console.log('IMDb ID detected, checking if it is anime on AniList...');
+
+            // Zkusíme získat všechny názvy z AniList (pokud je to anime)
             let names = await getAnimeNames(imdbId);
             
-            // Pokud AniList nevrátí nic, zkusíme Cinemeta
-            if (names.length === 0) {
-                console.log('AniList returned no names, trying Cinemeta');
+            if (names.length > 0) {
+                // Je to anime! Použijeme všechny názvy z AniList
+                console.log('Found anime on AniList with names:', names);
+                
+                // Filtrujeme latinské názvy
+                const latinNames = names.filter(name => {
+                    return /^[\x00-\x7F\u00C0-\u024F\u1E00-\u1EFF]+$/.test(name);
+                });
+                
+                console.log('Filtered to latin names:', latinNames);
+                
+                if (latinNames.length === 0) {
+                    console.log('No latin names available, trying Cinemeta');
+                    names = await getCinemetaName(args.type, args.id);
+                } else {
+                    names = latinNames;
+                }
+            } else {
+                // Není to anime na AniList, použijeme Cinemeta
+                console.log('Not found on AniList, using Cinemeta');
                 names = await getCinemetaName(args.type, args.id);
             }
 
-            console.log('Found names:', names);
+            console.log('Final names for search:', names);
 
             if (names.length === 0) {
                 console.log('No names found, returning empty');
                 return { streams: [] };
             }
 
-            // Filtrujeme jen názvy bez japonských znaků
-            const latinNames = names.filter(name => {
-                // Ponecháme jen názvy v latinské abecedě
-                return /^[\x00-\x7F\u00C0-\u024F\u1E00-\u1EFF]+$/.test(name);
-            });
-            
-            console.log('Filtered to latin names:', latinNames);
-            
-            if (latinNames.length === 0) {
-                console.log('No latin names available, returning empty');
-                return { streams: [] };
-            }
-
-            // Použijeme jen první (hlavní) název pro rychlost
-            const mainName = latinNames[0];
-            
-            if (args.type === 'series' && season && episode) {
-                const seasonEp = `S${String(season).padStart(2, '0')}E${String(episode).padStart(2, '0')}`;
-                searchQueries.push(`${mainName} ${seasonEp}`);
+            // Pro anime (více názvů z AniList) - hledáme s každým názvem
+            if (names.length > 1) {
+                console.log('Using multiple names from AniList for better coverage');
+                if (args.type === 'series' && season && episode) {
+                    const seasonEp = `S${String(season).padStart(2, '0')}E${String(episode).padStart(2, '0')}`;
+                    // Použijeme všechny názvy
+                    for (const name of names) {
+                        searchQueries.push(`${name} ${seasonEp}`);
+                    }
+                } else {
+                    searchQueries = names;
+                }
             } else {
-                searchQueries.push(mainName);
+                // Jen jeden název (z Cinemeta) - použijeme jen ten
+                const mainName = names[0];
+                if (args.type === 'series' && season && episode) {
+                    const seasonEp = `S${String(season).padStart(2, '0')}E${String(episode).padStart(2, '0')}`;
+                    searchQueries.push(`${mainName} ${seasonEp}`);
+                } else {
+                    searchQueries.push(mainName);
+                }
             }
         } else {
             searchQueries = [args.id];
@@ -483,9 +502,9 @@ builder.defineStreamHandler(async (args) => {
         }
 
         // Vytvoříme streamy pro každý výsledek
-        // Pokud nemáme číslo epizody, vrátíme víc výsledků (20) aby uživatel viděl všechny epizody
+        // Pokud nemáme číslo epizody, vrátíme víc výsledků (50) aby uživatel viděl všechny epizody
         const hasEpisodeNumber = args.id.split(':').length >= 3;
-        const maxStreams = hasEpisodeNumber ? 10 : 20;
+        const maxStreams = hasEpisodeNumber ? 10 : 50;
         
         const filesToProcess = filteredResults.slice(0, maxStreams);
         console.log(`Processing ${filesToProcess.length} files for links...`);
