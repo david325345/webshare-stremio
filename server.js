@@ -247,6 +247,7 @@ async function getCinemetaName(type, id) {
 
 builder.defineStreamHandler(async (args) => {
     console.log('=== STREAM REQUEST ===');
+    console.log('Full args:', JSON.stringify(args, null, 2));
     console.log('Type:', args.type);
     console.log('ID:', args.id);
     console.log('Config:', args.config ? 'present' : 'missing');
@@ -277,9 +278,10 @@ builder.defineStreamHandler(async (args) => {
             
             console.log('Parsed - kitsuId:', kitsuId, 'episode:', episode, 'season:', season);
 
-            // Pokud není číslo epizody, nemůžeme filtrovat - vrátíme vše
+            // Pokud není číslo epizody, nemůžeme filtrovat - vrátíme prázdné výsledky
             if (!episode) {
-                console.log('WARNING: No episode number in Kitsu ID, cannot filter properly');
+                console.log('No episode number provided, returning empty streams');
+                return { streams: [] };
             }
 
             // Získáme názvy z Kitsu API
