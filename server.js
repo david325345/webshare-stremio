@@ -6,7 +6,7 @@ const xml2js = require('xml2js');
 
 const manifest = {
     id: 'cz.webshare.anime',
-    version: '1.0.0',
+    version: '1.0.1',
     name: 'Webshare Anime',
     description: 'Anime z Webshare.cz',
     resources: ['stream'],
@@ -485,7 +485,10 @@ builder.defineStreamHandler(async (args) => {
         }
         
         console.log(`Returning ${streams.length} streams to Stremio`);
-        return { streams };
+        return { 
+            streams,
+            cacheMaxAge: 0 // Vypneme cache pro streamy
+        };
     } catch (error) {
         console.error('=== STREAM HANDLER ERROR ===');
         console.error('Error:', error.message);
