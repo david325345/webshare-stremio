@@ -118,6 +118,10 @@ async function getStreams(username, password, type, id) {
         console.log('Searching for:', query);
         const results = await api.search(query);
         
+        console.log('Results type:', typeof results);
+        console.log('Results is array:', Array.isArray(results));
+        console.log('Results:', JSON.stringify(results).substring(0, 200));
+        
         if (!results || results.length === 0) {
             console.log('No results found');
             return { streams: [] };
@@ -125,8 +129,10 @@ async function getStreams(username, password, type, id) {
 
         console.log(`Found ${results.length} results`);
         
+        const filesToProcess = Array.isArray(results) ? results.slice(0, 10) : [results].slice(0, 10);
+        
         const streams = await Promise.all(
-            results.slice(0, 10).map(async (file) => {
+            filesToProcess.map(async (file) => {
                 try {
                     const ident = file.ident[0];
                     const name = file.name ? file.name[0] : (file.n ? file.n[0] : 'Unknown');
@@ -148,7 +154,7 @@ async function getStreams(username, password, type, id) {
         console.log(`Returning ${validStreams.length} streams`);
         return { streams: validStreams };
     } catch (error) {
-        console.error('Stream error:', error.message);
+        console.error('Stream error:', error.message, error.stack);
         return { streams: [] };
     }
 }
