@@ -85,6 +85,37 @@ async function getFileLink(ident, token) {
     return null;
 }
 
+const TMDB_API_KEY = '0eefece0676icing90e9977c1e47c9dd'; // Free TMDB API key
+
+async function getShowName(type, id) {
+    try {
+        const baseId = id.split(':')[0];
+        
+        // Pokud je to IMDb ID (tt...), použijeme TMDB find endpoint
+        if (baseId.startsWith('tt')) {
+            const tmdbType = type === 'series' ? 'tv_results' : 'movie_results';
+            const url = `https://api.themoviedb.org/3/find/${baseId}?api_key=${TMDB_API_KEY}&external_source=imdb_id`;
+            const resp = await needle('get', url);
+            
+            if (resp.body && resp.body[tmdbType] && resp.body[tmdbType].length > 0) {
+                const result = resp.body[tmdbType][0];
+                return type === 'series' ? result.name : result.title;
+            }
+        }
+        
+        // Fallback na Cinemeta
+        const cinemataUrl = `https://v3-cinemeta.strem.io/meta/${type}/${baseId}.json`;
+        const resp = await needle('get', cinemataUrl);
+        
+        if (resp.body && resp.body.meta && resp.body.meta.name) {
+            return resp.body.meta.name;
+        }
+    } catch (error) {
+        console.error('Error getting show name:', error.message);
+    }
+    return null;
+}
+
 builder.defineStreamHandler(async (args) => {
     try {
         const { username, password } = args.config;
@@ -97,13 +128,34 @@ builder.defineStreamHandler(async (args) => {
         const token = await login(username, saltedPassword);
 
         // Vytvoříme vyhledávací dotaz
-        const parts = args.id.split(':');
-        let query = parts[0];
-        const season = parts[1];
-        const episode = parts[2];
+        let query = '';
+        
+        // Pokud máme ID ve formátu tt1234567:1:1, získáme název z TMDB
+        if (args.id.startsWith('tt') || args.id.startsWith('kitsu')) {
+            const parts = args.id.split(':');
+            const season = parts[1];
+            const episode = parts[2];
 
-        if (args.type === 'series' && season && episode) {
-            query = `S${String(season).padStart(2, '0')}E${String(episode).padStart(2, '0')}`;
+            // Získáme název anime z TMDB
+            const showName = await getShowName(args.type, args.id);
+            console.log('Show name from TMDB:', showName);
+            
+            if (showName) {
+                // Pro sérii přidáme season/episode
+                if (args.type === 'series' && season && episode) {
+                    query = `${showName} S${String(season).padStart(2, '0')}E${String(episode).padStart(2, '0')}`;
+                } else {
+                    // Pro filmy použijeme jen název
+                    query = showName;
+                }
+            } else {
+                // Fallback pokud nezískáme název
+                console.log('Could not get show name, returning empty');
+                return { streams: [] };
+            }
+        } else {
+            // Přímé vyhledávání
+            query = args.id;
         }
 
         console.log('Searching for:', query);
@@ -122,7 +174,10 @@ builder.defineStreamHandler(async (args) => {
                         return {
                             name: 'Webshare',
                             title: file.name,
-                            url: link
+                            url: link,
+                            behaviorHints: {
+                                bingeGroup: 'webshare-anime'
+                            }
                         };
                     }
                     return null;
