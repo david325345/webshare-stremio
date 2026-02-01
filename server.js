@@ -435,44 +435,57 @@ builder.defineStreamHandler(async (args) => {
             return { streams: [] };
         }
 
-        // Vytvoříme streamy pro každý výsledek
-        const streams = await Promise.all(
-            filteredResults.slice(0, 50).map(async (file) => {
-                try {
-                    const link = await getFileLink(file.ident, token);
-                    if (link) {
-                        const quality = detectQuality(file.name);
-                        
-                        // Sestavíme popis s metadaty
-                        let description = file.name;
-                        description += `\n💾 ${formatSize(file.size)}`;
-                        if (quality.resolution) description += ` | 📺 ${quality.resolution}`;
-                        if (quality.codec) description += ` | 🎬 ${quality.codec}`;
-                        if (quality.audio) description += ` | 🔊 ${quality.audio}`;
-                        if (quality.source) description += ` | 📀 ${quality.source}`;
-                        description += `\n👍 ${file.positive_votes} | 👎 ${file.negative_votes}`;
-                        
-                        return {
-                            name: `Webshare ${quality.resolution}`,
-                            title: file.name,
-                            url: link,
-                            description: description,
-                            behaviorHints: {
-                                bingeGroup: 'webshare-anime',
-                                videoSize: file.size,
-                                filename: file.name
-                            }
-                        };
+        // Vytvoříme streamy pro každý výsledek (max 30 pro rychlost)
+        const filesToProcess = filteredResults.slice(0, 30);
+        console.log(`Processing ${filesToProcess.length} files for links...`);
+        
+        const streams = [];
+        
+        // Zpracujeme soubory po dávkách (5 najednou) aby to nebyl timeout
+        for (let i = 0; i < filesToProcess.length; i += 5) {
+            const batch = filesToProcess.slice(i, i + 5);
+            const batchStreams = await Promise.all(
+                batch.map(async (file) => {
+                    try {
+                        const link = await getFileLink(file.ident, token);
+                        if (link) {
+                            const quality = detectQuality(file.name);
+                            
+                            // Sestavíme popis s metadaty
+                            let description = file.name;
+                            description += `\n💾 ${formatSize(file.size)}`;
+                            if (quality.resolution) description += ` | 📺 ${quality.resolution}`;
+                            if (quality.codec) description += ` | 🎬 ${quality.codec}`;
+                            if (quality.audio) description += ` | 🔊 ${quality.audio}`;
+                            if (quality.source) description += ` | 📀 ${quality.source}`;
+                            description += `\n👍 ${file.positive_votes} | 👎 ${file.negative_votes}`;
+                            
+                            return {
+                                name: `Webshare ${quality.resolution}`,
+                                title: file.name,
+                                url: link,
+                                description: description,
+                                behaviorHints: {
+                                    bingeGroup: 'webshare-anime',
+                                    videoSize: file.size,
+                                    filename: file.name
+                                }
+                            };
+                        }
+                        return null;
+                    } catch (error) {
+                        console.error('Error getting link:', error.message);
+                        return null;
                     }
-                    return null;
-                } catch (error) {
-                    console.error('Error getting link:', error.message);
-                    return null;
-                }
-            })
-        );
-
-        return { streams: streams.filter(s => s !== null) };
+                })
+            );
+            
+            streams.push(...batchStreams.filter(s => s !== null));
+            console.log(`Processed batch ${Math.floor(i/5) + 1}, total streams: ${streams.length}`);
+        }
+        
+        console.log(`Returning ${streams.length} streams to Stremio`);
+        return { streams };
     } catch (error) {
         console.error('=== STREAM HANDLER ERROR ===');
         console.error('Error:', error.message);
