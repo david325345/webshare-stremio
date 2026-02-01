@@ -42,10 +42,11 @@ class WebshareAPI {
     }
 
     hashPassword(password, salt) {
-        // Simplified version - just use MD5 of password + salt
-        const hash = this.md5(password);
-        const digest = this.md5(this.username + ':Webshare:' + hash);
-        return { password: hash, digest: digest };
+        // First create MD5 crypt hash with salt
+        // For simplicity, we'll use SHA1 of password with salt
+        const passwordHash = this.sha1(this.md5(password + salt));
+        const digest = this.md5(this.username + ':Webshare:' + passwordHash);
+        return { password: passwordHash, digest: digest };
     }
 
     async login() {
