@@ -6,17 +6,13 @@ const xml2js = require('xml2js');
 
 const manifest = {
     id: 'cz.webshare.anime',
-    version: '1.0.1',
+    version: '1.0.2',
     name: 'Webshare Anime',
     description: 'Anime z Webshare.cz',
     resources: ['stream'],
     types: ['series', 'movie'],
     catalogs: [],
     idPrefixes: ['tt', 'kitsu'],
-    behaviorHints: {
-        configurable: true,
-        configurationRequired: true
-    },
     config: [
         {
             key: 'username',
