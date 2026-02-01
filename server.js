@@ -3,6 +3,7 @@ const NodeCache = require('node-cache');
 const express = require('express');
 const xml2js = require('xml2js');
 const crypto = require('crypto');
+const crypt = require('unix-crypt-td-js');
 
 const tokenCache = new NodeCache({ stdTTL: 3600 });
 const searchCache = new NodeCache({ stdTTL: 600 });
@@ -42,10 +43,12 @@ class WebshareAPI {
     }
 
     hashPassword(password, salt) {
-        // First create MD5 crypt hash with salt
-        // For simplicity, we'll use SHA1 of password with salt
-        const passwordHash = this.sha1(this.md5(password + salt));
-        const digest = this.md5(this.username + ':Webshare:' + passwordHash);
+        // MD5_CRYPT with salt format: $1$salt$
+        const md5CryptHash = crypt(password, '$1$' + salt + '$');
+        // SHA1 of the MD5_CRYPT result
+        const passwordHash = crypto.createHash('sha1').update(md5CryptHash).digest('hex');
+        // Digest uses original password
+        const digest = crypto.createHash('md5').update(this.username + ':Webshare:' + password).digest('hex');
         return { password: passwordHash, digest: digest };
     }
 
@@ -58,10 +61,13 @@ class WebshareAPI {
         }
 
         try {
-            // Zkusíme jednoduchou metodu s plain heslem
+            const salt = await this.getSalt();
+            const { password, digest } = this.hashPassword(this.password, salt);
+
             const params = new URLSearchParams();
             params.append('username_or_email', this.username);
-            params.append('password', this.password);
+            params.append('password', password);
+            params.append('digest', digest);
             params.append('keep_logged_in', '1');
 
             const response = await axios.post(`${this.baseUrl}/login/`, params, {
@@ -70,8 +76,6 @@ class WebshareAPI {
 
             const result = await parser.parseStringPromise(response.data);
             
-            console.log('Login response:', JSON.stringify(result, null, 2));
-            
             if (result.response.status[0] !== 'OK') {
                 console.error('Login failed:', result.response);
                 throw new Error('Login failed: ' + result.response.message[0]);
@@ -79,7 +83,7 @@ class WebshareAPI {
 
             this.token = result.response.token[0];
             tokenCache.set(cacheKey, this.token);
-            console.log('Login successful, token:', this.token.substring(0, 10) + '...');
+            console.log('Login successful');
             return this.token;
         } catch (error) {
             console.error('Login error:', error.message);
