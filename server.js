@@ -158,23 +158,41 @@ async function getKitsuNames(kitsuId) {
 
 // AniList GraphQL API pro získání všech variant názvů anime z IMDb ID
 async function getAnimeNamesFromIMDb(imdbId) {
-    const query = `
-    query ($idMal: Int) {
-        Media(idMal: $idMal, type: ANIME) {
-            title {
-                romaji
-                english
-                native
-            }
-            synonyms
-        }
-    }`;
-
     try {
-        // Nejdřív zkusíme přímo s IMDb ID na AniList
-        const queryByIMDb = `
-        query ($id: String) {
-            Media(idMal: $id, type: ANIME) {
+        // Zkusíme Jikan API (MyAnimeList) - má lepší IMDb mapping
+        console.log('Trying Jikan API for IMDb:', imdbId);
+        
+        // Jikan nemá přímé IMDb vyhledávání, zkusíme TMDB
+        const tmdbUrl = `https://api.themoviedb.org/3/find/${imdbId}?api_key=0eefece0676icing90e9977c1e47c9dd&external_source=imdb_id`;
+        const tmdbResp = await needle('get', tmdbUrl);
+        
+        let searchName = null;
+        
+        if (tmdbResp.body && tmdbResp.body.tv_results && tmdbResp.body.tv_results.length > 0) {
+            const tvShow = tmdbResp.body.tv_results[0];
+            searchName = tvShow.name || tvShow.original_name;
+            console.log('Got name from TMDB:', searchName);
+        }
+        
+        if (!searchName) {
+            console.log('TMDB returned no results for IMDb:', imdbId);
+            return [];
+        }
+        
+        // Vyčistíme název pro lepší vyhledávání
+        // "Don't Toy with Me, Miss Nagatoro" → "Nagatoro"
+        const cleanName = searchName
+            .replace(/Don't Toy with Me,?\s*/i, '')
+            .replace(/Miss\s+/i, '')
+            .replace(/Season \d+/gi, '')
+            .trim();
+        
+        console.log('Cleaned search name:', cleanName);
+        
+        // Hledáme na AniList podle vyčištěného názvu
+        const searchQuery = `
+        query ($search: String) {
+            Media(search: $search, type: ANIME) {
                 title {
                     romaji
                     english
@@ -185,31 +203,8 @@ async function getAnimeNamesFromIMDb(imdbId) {
             }
         }`;
         
-        // AniList bohužel nemá přímé IMDb vyhledávání, musíme použít jinou strategii
-        // Použijeme TMDB jako most: IMDb → TMDB → název → AniList search
-        
-        const tmdbUrl = `https://api.themoviedb.org/3/find/${imdbId}?api_key=0eefece0676icing90e9977c1e47c9dd&external_source=imdb_id`;
-        const tmdbResp = await needle('get', tmdbUrl);
-        
-        if (tmdbResp.body && tmdbResp.body.tv_results && tmdbResp.body.tv_results.length > 0) {
-            const tvShow = tmdbResp.body.tv_results[0];
-            const name = tvShow.name || tvShow.original_name;
-            
-            console.log('Got name from TMDB:', name);
-            
-            // Teď hledáme na AniList podle názvu
-            const searchQuery = `
-            query ($search: String) {
-                Media(search: $search, type: ANIME) {
-                    title {
-                        romaji
-                        english
-                        native
-                    }
-                    synonyms
-                }
-            }`;
-            
+        // Zkusíme jak plný tak vyčištěný název
+        for (const name of [searchName, cleanName]) {
             const searchResp = await needle('post', 'https://graphql.anilist.co', {
                 query: searchQuery,
                 variables: { search: name }
@@ -226,10 +221,12 @@ async function getAnimeNamesFromIMDb(imdbId) {
                 if (media.title.native) names.push(media.title.native);
                 if (media.synonyms) names.push(...media.synonyms);
                 
-                console.log('Found on AniList via TMDB:', names);
+                console.log('Found on AniList:', names);
                 return [...new Set(names)];
             }
         }
+        
+        console.log('Not found on AniList');
     } catch (error) {
         console.error('Error getting anime names from IMDb:', error.message);
     }
