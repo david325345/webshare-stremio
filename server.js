@@ -159,12 +159,16 @@ async function getKitsuNames(kitsuId) {
 // AniList GraphQL API pro získání všech variant názvů anime z IMDb ID
 async function getAnimeNamesFromIMDb(imdbId) {
     try {
-        // Zkusíme Jikan API (MyAnimeList) - má lepší IMDb mapping
-        console.log('Trying Jikan API for IMDb:', imdbId);
+        console.log('=== getAnimeNamesFromIMDb START ===');
+        console.log('IMDb ID:', imdbId);
         
-        // Jikan nemá přímé IMDb vyhledávání, zkusíme TMDB
+        // Zkusíme TMDB
         const tmdbUrl = `https://api.themoviedb.org/3/find/${imdbId}?api_key=0eefece0676icing90e9977c1e47c9dd&external_source=imdb_id`;
+        console.log('Calling TMDB:', tmdbUrl);
+        
         const tmdbResp = await needle('get', tmdbUrl);
+        console.log('TMDB response status:', tmdbResp.statusCode);
+        console.log('TMDB tv_results:', tmdbResp.body?.tv_results);
         
         let searchName = null;
         
@@ -172,15 +176,12 @@ async function getAnimeNamesFromIMDb(imdbId) {
             const tvShow = tmdbResp.body.tv_results[0];
             searchName = tvShow.name || tvShow.original_name;
             console.log('Got name from TMDB:', searchName);
-        }
-        
-        if (!searchName) {
-            console.log('TMDB returned no results for IMDb:', imdbId);
+        } else {
+            console.log('TMDB returned no TV results');
             return [];
         }
         
         // Vyčistíme název pro lepší vyhledávání
-        // "Don't Toy with Me, Miss Nagatoro" → "Nagatoro"
         const cleanName = searchName
             .replace(/Don't Toy with Me,?\s*/i, '')
             .replace(/Miss\s+/i, '')
@@ -189,7 +190,7 @@ async function getAnimeNamesFromIMDb(imdbId) {
         
         console.log('Cleaned search name:', cleanName);
         
-        // Hledáme na AniList podle vyčištěného názvu
+        // Hledáme na AniList
         const searchQuery = `
         query ($search: String) {
             Media(search: $search, type: ANIME) {
@@ -203,14 +204,19 @@ async function getAnimeNamesFromIMDb(imdbId) {
             }
         }`;
         
-        // Zkusíme jak plný tak vyčištěný název
+        // Zkusíme oba názvy
         for (const name of [searchName, cleanName]) {
+            console.log('Searching AniList with:', name);
+            
             const searchResp = await needle('post', 'https://graphql.anilist.co', {
                 query: searchQuery,
                 variables: { search: name }
             }, {
                 json: true
             });
+            
+            console.log('AniList response status:', searchResp.statusCode);
+            console.log('AniList data:', searchResp.body?.data);
             
             if (searchResp.body && searchResp.body.data && searchResp.body.data.Media) {
                 const media = searchResp.body.data.Media;
@@ -222,13 +228,17 @@ async function getAnimeNamesFromIMDb(imdbId) {
                 if (media.synonyms) names.push(...media.synonyms);
                 
                 console.log('Found on AniList:', names);
+                console.log('=== getAnimeNamesFromIMDb SUCCESS ===');
                 return [...new Set(names)];
             }
         }
         
-        console.log('Not found on AniList');
+        console.log('Not found on AniList after trying both names');
+        console.log('=== getAnimeNamesFromIMDb FAIL ===');
     } catch (error) {
-        console.error('Error getting anime names from IMDb:', error.message);
+        console.error('=== getAnimeNamesFromIMDb ERROR ===');
+        console.error('Error:', error.message);
+        console.error('Stack:', error.stack);
     }
     
     return [];
