@@ -525,6 +525,9 @@ builder.defineStreamHandler(async (args) => {
                         new RegExp(`E${String(targetEpisode).padStart(2, '0')}$`, 'i'),
                         new RegExp(`EP${String(targetEpisode).padStart(2, '0')}[^0-9]`, 'i'),
                         new RegExp(`EP${String(targetEpisode).padStart(2, '0')}$`, 'i'),
+                        // Formát jen čísla: "-02-", "-02.", " 02 ", " 02.", "_02_", atd.
+                        new RegExp(`[\\s\\-_\\.]${String(targetEpisode).padStart(2, '0')}[\\s\\-_\\.]`, 'i'),
+                        new RegExp(`[\\s\\-_\\.]${String(targetEpisode).padStart(2, '0')}$`, 'i'),
                     ];
                     
                     const hasEpisodeNumber = exactPatterns.some(p => nameUpper.includes(p)) ||
@@ -553,10 +556,24 @@ builder.defineStreamHandler(async (args) => {
                 
                 console.log(`Filtered to ${filteredResults.length} results matching episode`);
                 
-                // Pokud přísný filtr nenajde nic, vrátíme všechny výsledky
+                // Pokud nic nenajdeme, zkusíme méně přísný filtr (jen číslo epizody bez názvu)
                 if (filteredResults.length === 0) {
-                    console.log('No exact matches, returning all results');
-                    filteredResults = results;
+                    console.log('No matches with title filter, trying episode number only');
+                    filteredResults = results.filter(result => {
+                        const nameUpper = result.name.toUpperCase();
+                        const exactPatterns = [
+                            `S${String(targetSeason).padStart(2, '0')}E${String(targetEpisode).padStart(2, '0')}`,
+                            `S${targetSeason}E${String(targetEpisode).padStart(2, '0')}`,
+                        ];
+                        const episodeOnlyPatterns = [
+                            new RegExp(`E${String(targetEpisode).padStart(2, '0')}[^0-9]`, 'i'),
+                            new RegExp(`E${String(targetEpisode).padStart(2, '0')}$`, 'i'),
+                            new RegExp(`[\\s\\-_\\.]${String(targetEpisode).padStart(2, '0')}[\\s\\-_\\.]`, 'i'),
+                        ];
+                        return exactPatterns.some(p => nameUpper.includes(p)) ||
+                               episodeOnlyPatterns.some(p => p.test(nameUpper));
+                    });
+                    console.log(`Relaxed filter found ${filteredResults.length} results`);
                 }
             } else {
                 console.log('No episode number to filter - showing all results');
