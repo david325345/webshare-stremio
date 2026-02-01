@@ -6,7 +6,7 @@ const xml2js = require('xml2js');
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '1.2.1',
+    version: '1.3.0',
     name: 'Webshare Anime',
     description: 'Anime z Webshare.cz',
     resources: ['stream'],
@@ -480,6 +480,12 @@ builder.defineStreamHandler(async (args) => {
 
         console.log(`Found ${results.length} unique results`);
 
+        // Vytvoříme klíčová slova z search queries pro filtrování a sorting
+        const searchKeywords = searchQueries.map(q => {
+            return q.replace(/S\d+E\d+/gi, '').trim().toLowerCase();
+        });
+        console.log('Search keywords for matching:', searchKeywords);
+
         // Pokud hledáme konkrétní epizodu, filtrujeme jen tu
         let filteredResults = results;
         if (args.type === 'series') {
@@ -499,12 +505,6 @@ builder.defineStreamHandler(async (args) => {
             // Pouze filtrujeme, pokud máme číslo epizody
             if (targetSeason && targetEpisode) {
                 console.log(`Filtering for season ${targetSeason}, episode ${targetEpisode}`);
-                
-                // Vytvoříme klíčová slova z search queries
-                const searchKeywords = searchQueries.map(q => {
-                    return q.replace(/S\d+E\d+/gi, '').trim().toLowerCase();
-                });
-                console.log('Search keywords for title matching:', searchKeywords);
                 
                 filteredResults = results.filter(result => {
                     const nameUpper = result.name.toUpperCase();
@@ -554,8 +554,28 @@ builder.defineStreamHandler(async (args) => {
             }
         }
 
-        // Prioritizace CZ/SK - české a slovenské soubory dáme nahoru
+        // Prioritizace podle relevance
         filteredResults.sort((a, b) => {
+            const aName = a.name.toLowerCase();
+            const bName = b.name.toLowerCase();
+            
+            // 1. Relevance skóre - kolik klíčových slov se shoduje
+            const aScore = searchKeywords.reduce((score, keyword) => {
+                const words = keyword.split(/\s+/).filter(w => w.length >= 3);
+                const matches = words.filter(word => aName.includes(word)).length;
+                return score + matches;
+            }, 0);
+            
+            const bScore = searchKeywords.reduce((score, keyword) => {
+                const words = keyword.split(/\s+/).filter(w => w.length >= 3);
+                const matches = words.filter(word => bName.includes(word)).length;
+                return score + matches;
+            }, 0);
+            
+            // Pokud jsou skóre různá, vyšší skóre vyhrává
+            if (aScore !== bScore) return bScore - aScore;
+            
+            // 2. CZ/SK priorita
             const aHasCZSK = a.name.toUpperCase().includes('CZ') || 
                             a.name.toUpperCase().includes('CZECH') ||
                             a.name.toUpperCase().includes('SK') ||
@@ -568,7 +588,7 @@ builder.defineStreamHandler(async (args) => {
             if (aHasCZSK && !bHasCZSK) return -1;
             if (!aHasCZSK && bHasCZSK) return 1;
             
-            // Seřadit podle čísla epizody v názvu (E01, E02, atd.)
+            // 3. Seřadit podle čísla epizody v názvu (E01, E02, atd.)
             const aMatch = a.name.match(/[SE](\d+)/i);
             const bMatch = b.name.match(/[SE](\d+)/i);
             if (aMatch && bMatch) {
@@ -577,7 +597,7 @@ builder.defineStreamHandler(async (args) => {
                 if (aNum !== bNum) return aNum - bNum;
             }
             
-            // Pak podle velikosti (větší = lepší kvalita)
+            // 4. Pak podle velikosti (větší = lepší kvalita)
             return parseInt(b.size) - parseInt(a.size);
         });
 
@@ -588,7 +608,7 @@ builder.defineStreamHandler(async (args) => {
         // Vytvoříme streamy pro každý výsledek
         // Pokud nemáme číslo epizody, vrátíme víc výsledků (50) aby uživatel viděl všechny epizody
         const hasEpisodeNumber = args.id.split(':').length >= 3;
-        const maxStreams = hasEpisodeNumber ? 10 : 50;
+        const maxStreams = hasEpisodeNumber ? 20 : 50;
         
         const filesToProcess = filteredResults.slice(0, maxStreams);
         console.log(`Processing ${filesToProcess.length} files for links...`);
