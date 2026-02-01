@@ -6,7 +6,7 @@ const xml2js = require('xml2js');
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '1.0.0',
+    version: '1.0.1',
     name: 'Webshare Anime',
     description: 'Anime z Webshare.cz',
     resources: ['stream'],
@@ -436,25 +436,10 @@ builder.defineStreamHandler(async (args) => {
                 if (link) {
                     const quality = detectQuality(file.name);
                     
-                    // Sestavíme popis s metadaty
-                    let description = file.name;
-                    description += `\n💾 ${formatSize(file.size)}`;
-                    if (quality.resolution) description += ` | 📺 ${quality.resolution}`;
-                    if (quality.codec) description += ` | 🎬 ${quality.codec}`;
-                    if (quality.audio) description += ` | 🔊 ${quality.audio}`;
-                    if (quality.source) description += ` | 📀 ${quality.source}`;
-                    description += `\n👍 ${file.positive_votes} | 👎 ${file.negative_votes}`;
-                    
                     return {
                         name: `Webshare ${quality.resolution}`,
-                        title: file.name,
-                        url: link,
-                        description: description,
-                        behaviorHints: {
-                            bingeGroup: 'webshare-anime',
-                            videoSize: file.size,
-                            filename: file.name
-                        }
+                        title: `${file.name} (${formatSize(file.size)})`,
+                        url: link
                     };
                 }
                 return null;
