@@ -294,20 +294,45 @@ builder.defineStreamHandler(async (args) => {
         let filteredResults = results;
         if (args.type === 'series') {
             const parts = args.id.split(':');
-            const targetSeason = parts[parts.length - 2];
-            const targetEpisode = parts[parts.length - 1];
+            const targetSeason = parseInt(parts[parts.length - 2]);
+            const targetEpisode = parseInt(parts[parts.length - 1]);
             
             if (targetSeason && targetEpisode) {
-                const seasonEpPattern = `S${String(targetSeason).padStart(2, '0')}E${String(targetEpisode).padStart(2, '0')}`;
-                console.log('Filtering for:', seasonEpPattern);
+                console.log(`Filtering for season ${targetSeason}, episode ${targetEpisode}`);
                 
                 filteredResults = results.filter(result => {
                     const nameUpper = result.name.toUpperCase();
-                    return nameUpper.includes(seasonEpPattern) || 
-                           nameUpper.includes(`${targetSeason}X${String(targetEpisode).padStart(2, '0')}`);
+                    
+                    // Různé formáty epizod:
+                    // S01E01, S1E1, 01x01, 1x01, E01, EP01, Episode 01
+                    const patterns = [
+                        `S${String(targetSeason).padStart(2, '0')}E${String(targetEpisode).padStart(2, '0')}`,  // S01E01
+                        `S${targetSeason}E${String(targetEpisode).padStart(2, '0')}`,  // S1E01
+                        `S${String(targetSeason).padStart(2, '0')}E${targetEpisode}`,  // S01E1
+                        `S${targetSeason}E${targetEpisode}`,  // S1E1
+                        `${String(targetSeason).padStart(2, '0')}X${String(targetEpisode).padStart(2, '0')}`,  // 01x01
+                        `${targetSeason}X${String(targetEpisode).padStart(2, '0')}`,  // 1x01
+                        `${String(targetSeason).padStart(2, '0')}X${targetEpisode}`,  // 01x1
+                        `${targetSeason}X${targetEpisode}`,  // 1x1
+                        ` ${String(targetEpisode).padStart(2, '0')} `,  // " 01 " (pro single season)
+                        `-${String(targetEpisode).padStart(2, '0')}-`,  // "-01-"
+                        `-${String(targetEpisode).padStart(2, '0')}.`,  // "-01."
+                        `E${String(targetEpisode).padStart(2, '0')}`,  // E01
+                        `EP${String(targetEpisode).padStart(2, '0')}`,  // EP01
+                        `EPISODE ${String(targetEpisode).padStart(2, '0')}`,  // EPISODE 01
+                        `EPISODE${String(targetEpisode).padStart(2, '0')}`  // EPISODE01
+                    ];
+                    
+                    return patterns.some(pattern => nameUpper.includes(pattern));
                 });
                 
                 console.log(`Filtered to ${filteredResults.length} results matching episode`);
+                
+                // Pokud přísný filtr nenajde nic, vrátíme všechny výsledky
+                if (filteredResults.length === 0) {
+                    console.log('No exact matches, returning all results');
+                    filteredResults = results;
+                }
             }
         }
 
