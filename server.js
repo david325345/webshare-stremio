@@ -268,9 +268,19 @@ builder.defineStreamHandler(async (args) => {
         if (args.id.startsWith('kitsu:')) {
             // Kitsu ID formát: kitsu:ID:episode (3 části, sezona je vždy 1)
             const parts = args.id.split(':');
+            console.log('Kitsu ID parts:', parts);
+            console.log('Parts length:', parts.length);
+            
             const kitsuId = parts[1];
             const episode = parts[2];
             const season = 1; // Kitsu nemá sezony, vždy 1
+            
+            console.log('Parsed - kitsuId:', kitsuId, 'episode:', episode, 'season:', season);
+
+            // Pokud není číslo epizody, nemůžeme filtrovat - vrátíme vše
+            if (!episode) {
+                console.log('WARNING: No episode number in Kitsu ID, cannot filter properly');
+            }
 
             // Získáme názvy z Kitsu API
             const names = await getKitsuNames(kitsuId);
