@@ -6,7 +6,7 @@ const xml2js = require('xml2js');
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '1.2.0',
+    version: '1.2.1',
     name: 'Webshare Anime',
     description: 'Anime z Webshare.cz',
     resources: ['stream'],
@@ -438,13 +438,13 @@ builder.defineStreamHandler(async (args) => {
                 console.log('Using multiple names from AniList for better coverage');
                 if (args.type === 'series' && season && episode) {
                     const seasonEp = `S${String(season).padStart(2, '0')}E${String(episode).padStart(2, '0')}`;
-                    // Použijeme jen první 2 názvy (romaji + english)
-                    for (const name of names.slice(0, 2)) {
+                    // Použijeme jen první 3 názvy (romaji + english + hlavní synonym)
+                    for (const name of names.slice(0, 3)) {
                         searchQueries.push(`${name} ${seasonEp}`);
                     }
                 } else {
-                    // Jen první 2 názvy
-                    searchQueries = names.slice(0, 2);
+                    // Jen první 3 názvy
+                    searchQueries = names.slice(0, 3);
                 }
             } else {
                 // Jen jeden název (z Cinemeta) - použijeme jen ten
@@ -500,38 +500,46 @@ builder.defineStreamHandler(async (args) => {
             if (targetSeason && targetEpisode) {
                 console.log(`Filtering for season ${targetSeason}, episode ${targetEpisode}`);
                 
+                // Vytvoříme klíčová slova z search queries
+                const searchKeywords = searchQueries.map(q => {
+                    return q.replace(/S\d+E\d+/gi, '').trim().toLowerCase();
+                });
+                console.log('Search keywords for title matching:', searchKeywords);
+                
                 filteredResults = results.filter(result => {
                     const nameUpper = result.name.toUpperCase();
+                    const nameLower = result.name.toLowerCase();
                     
-                    // Přesné patterny pro epizody - musí být přesná shoda
+                    // 1) Musí obsahovat číslo epizody
                     const exactPatterns = [
-                        `S${String(targetSeason).padStart(2, '0')}E${String(targetEpisode).padStart(2, '0')}`,  // S01E01
-                        `S${targetSeason}E${String(targetEpisode).padStart(2, '0')}`,  // S1E01
-                        `S${String(targetSeason).padStart(2, '0')}E${targetEpisode}`,  // S01E1
-                        `S${targetSeason}E${targetEpisode}`,  // S1E1
-                        `${String(targetSeason).padStart(2, '0')}X${String(targetEpisode).padStart(2, '0')}`,  // 01x01
-                        `${targetSeason}X${String(targetEpisode).padStart(2, '0')}`,  // 1x01
-                        `${String(targetSeason).padStart(2, '0')}X${targetEpisode}`,  // 01x1
-                        `${targetSeason}X${targetEpisode}`,  // 1x1
+                        `S${String(targetSeason).padStart(2, '0')}E${String(targetEpisode).padStart(2, '0')}`,
+                        `S${targetSeason}E${String(targetEpisode).padStart(2, '0')}`,
+                        `S${String(targetSeason).padStart(2, '0')}E${targetEpisode}`,
+                        `S${targetSeason}E${targetEpisode}`,
+                        `${String(targetSeason).padStart(2, '0')}X${String(targetEpisode).padStart(2, '0')}`,
+                        `${targetSeason}X${String(targetEpisode).padStart(2, '0')}`,
                     ];
                     
-                    // EP/Episode patterns - musí být následované přesným číslem a koncem slova
                     const episodeOnlyPatterns = [
-                        new RegExp(`E${String(targetEpisode).padStart(2, '0')}[^0-9]`, 'i'),  // E01 (následované non-digit)
-                        new RegExp(`E${String(targetEpisode).padStart(2, '0')}$`, 'i'),  // E01 (na konci)
-                        new RegExp(`EP${String(targetEpisode).padStart(2, '0')}[^0-9]`, 'i'),  // EP01
+                        new RegExp(`E${String(targetEpisode).padStart(2, '0')}[^0-9]`, 'i'),
+                        new RegExp(`E${String(targetEpisode).padStart(2, '0')}$`, 'i'),
+                        new RegExp(`EP${String(targetEpisode).padStart(2, '0')}[^0-9]`, 'i'),
                         new RegExp(`EP${String(targetEpisode).padStart(2, '0')}$`, 'i'),
-                        new RegExp(`EPISODE[\\s-_]*${String(targetEpisode).padStart(2, '0')}[^0-9]`, 'i'),  // EPISODE 01
-                        new RegExp(`EPISODE[\\s-_]*${String(targetEpisode).padStart(2, '0')}$`, 'i'),
                     ];
                     
-                    // Kontrola přesných patternů
-                    const hasExactPattern = exactPatterns.some(pattern => nameUpper.includes(pattern));
-                    if (hasExactPattern) return true;
+                    const hasEpisodeNumber = exactPatterns.some(p => nameUpper.includes(p)) ||
+                                           episodeOnlyPatterns.some(p => p.test(nameUpper));
                     
-                    // Kontrola episode-only patternů (pro single season anime)
-                    const hasEpisodePattern = episodeOnlyPatterns.some(pattern => pattern.test(nameUpper));
-                    return hasEpisodePattern;
+                    if (!hasEpisodeNumber) return false;
+                    
+                    // 2) Musí obsahovat část názvu anime (min 4 znaky)
+                    const hasAnimeTitle = searchKeywords.some(keyword => {
+                        if (keyword.length < 4) return true;
+                        const words = keyword.split(/\s+/).filter(w => w.length >= 4);
+                        return words.some(word => nameLower.includes(word));
+                    });
+                    
+                    return hasAnimeTitle;
                 });
                 
                 console.log(`Filtered to ${filteredResults.length} results matching episode`);
