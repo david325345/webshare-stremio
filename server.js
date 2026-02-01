@@ -6,7 +6,7 @@ const xml2js = require('xml2js');
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '1.3.2',
+    version: '1.4.0',
     name: 'Webshare Anime',
     description: 'Anime z Webshare.cz',
     resources: ['stream'],
@@ -654,10 +654,34 @@ builder.defineStreamHandler(async (args) => {
                 if (link) {
                     const quality = detectQuality(file.name);
                     
+                    // Sestavíme název s metadaty
+                    const sizeStr = formatSize(file.size);
+                    const qualityStr = quality.resolution || 'SD';
+                    
+                    // Detekce jazyka z názvu
+                    const nameUpper = file.name.toUpperCase();
+                    let language = '';
+                    if (nameUpper.includes('CZ') || nameUpper.includes('CZECH')) {
+                        language = '🇨🇿';
+                    } else if (nameUpper.includes('SK') || nameUpper.includes('SLOVAK')) {
+                        language = '🇸🇰';
+                    }
+                    
+                    // Sestavíme čistý název streamu
+                    let streamName = `Webshare ${qualityStr}`;
+                    if (language) streamName = `${language} ${streamName}`;
+                    if (quality.codec) streamName += ` ${quality.codec}`;
+                    
                     return {
-                        name: `Webshare ${quality.resolution}`,
-                        title: `${file.name} (${formatSize(file.size)})`,
-                        url: link
+                        name: streamName,
+                        title: `${file.name} (${sizeStr})`,
+                        url: link,
+                        behaviorHints: {
+                            bingeGroup: 'webshare-anime',
+                            videoSize: file.size,
+                            filename: file.name,
+                            videoHash: file.ident
+                        }
                     };
                 }
                 return null;
