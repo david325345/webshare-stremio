@@ -6,7 +6,7 @@ const xml2js = require('xml2js');
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '1.3.0',
+    version: '1.3.1',
     name: 'Webshare Anime',
     description: 'Anime z Webshare.cz',
     resources: ['stream'],
@@ -532,11 +532,20 @@ builder.defineStreamHandler(async (args) => {
                     
                     if (!hasEpisodeNumber) return false;
                     
-                    // 2) Musí obsahovat část názvu anime (min 4 znaky)
+                    // 2) Musí obsahovat část názvu anime
                     const hasAnimeTitle = searchKeywords.some(keyword => {
                         if (keyword.length < 4) return true;
-                        const words = keyword.split(/\s+/).filter(w => w.length >= 4);
-                        return words.some(word => nameLower.includes(word));
+                        
+                        // Rozdělíme na slova delší než 3 znaky
+                        const words = keyword.split(/\s+/).filter(w => w.length > 3);
+                        if (words.length === 0) return true;
+                        
+                        // Spočítáme kolik slov se shoduje
+                        const matchedWords = words.filter(word => nameLower.includes(word)).length;
+                        
+                        // Musí obsahovat alespoň 30% slov (nebo min 2 slova)
+                        const minWords = Math.max(2, Math.ceil(words.length * 0.3));
+                        return matchedWords >= minWords;
                     });
                     
                     return hasAnimeTitle;
