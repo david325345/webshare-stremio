@@ -290,9 +290,52 @@ builder.defineStreamHandler(async (args) => {
 
         console.log(`Found ${results.length} unique results`);
 
+        // Pokud hledáme konkrétní epizodu, filtrujeme jen tu
+        let filteredResults = results;
+        if (args.type === 'series') {
+            const parts = args.id.split(':');
+            const targetSeason = parts[parts.length - 2];
+            const targetEpisode = parts[parts.length - 1];
+            
+            if (targetSeason && targetEpisode) {
+                const seasonEpPattern = `S${String(targetSeason).padStart(2, '0')}E${String(targetEpisode).padStart(2, '0')}`;
+                console.log('Filtering for:', seasonEpPattern);
+                
+                filteredResults = results.filter(result => {
+                    const nameUpper = result.name.toUpperCase();
+                    return nameUpper.includes(seasonEpPattern) || 
+                           nameUpper.includes(`${targetSeason}X${String(targetEpisode).padStart(2, '0')}`);
+                });
+                
+                console.log(`Filtered to ${filteredResults.length} results matching episode`);
+            }
+        }
+
+        // Prioritizace CZ/SK - české a slovenské soubory dáme nahoru
+        filteredResults.sort((a, b) => {
+            const aHasCZSK = a.name.toUpperCase().includes('CZ') || 
+                            a.name.toUpperCase().includes('CZECH') ||
+                            a.name.toUpperCase().includes('SK') ||
+                            a.name.toUpperCase().includes('SLOVAK');
+            const bHasCZSK = b.name.toUpperCase().includes('CZ') || 
+                            b.name.toUpperCase().includes('CZECH') ||
+                            b.name.toUpperCase().includes('SK') ||
+                            b.name.toUpperCase().includes('SLOVAK');
+            
+            if (aHasCZSK && !bHasCZSK) return -1;
+            if (!aHasCZSK && bHasCZSK) return 1;
+            
+            // Pokud oba mají nebo nemají CZ/SK, seřadíme podle velikosti (větší = lepší kvalita)
+            return parseInt(b.size) - parseInt(a.size);
+        });
+
+        if (filteredResults.length === 0) {
+            return { streams: [] };
+        }
+
         // Vytvoříme streamy pro každý výsledek
         const streams = await Promise.all(
-            results.slice(0, 20).map(async (file) => {
+            filteredResults.slice(0, 20).map(async (file) => {
                 try {
                     const link = await getFileLink(file.ident, token);
                     if (link) {
