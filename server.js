@@ -156,36 +156,18 @@ async function getKitsuNames(kitsuId) {
     return [];
 }
 
-// AniList GraphQL API pro získání všech variant názvů anime z IMDb ID
-async function getAnimeNamesFromIMDb(imdbId) {
+// AniList GraphQL API pro získání všech variant názvů anime z názvu
+async function getAnimeNamesFromTitle(title) {
     try {
-        console.log('=== getAnimeNamesFromIMDb START ===');
-        console.log('IMDb ID:', imdbId);
-        
-        // Zkusíme TMDB
-        const tmdbUrl = `https://api.themoviedb.org/3/find/${imdbId}?api_key=0eefece0676icing90e9977c1e47c9dd&external_source=imdb_id`;
-        console.log('Calling TMDB:', tmdbUrl);
-        
-        const tmdbResp = await needle('get', tmdbUrl);
-        console.log('TMDB response status:', tmdbResp.statusCode);
-        console.log('TMDB tv_results:', tmdbResp.body?.tv_results);
-        
-        let searchName = null;
-        
-        if (tmdbResp.body && tmdbResp.body.tv_results && tmdbResp.body.tv_results.length > 0) {
-            const tvShow = tmdbResp.body.tv_results[0];
-            searchName = tvShow.name || tvShow.original_name;
-            console.log('Got name from TMDB:', searchName);
-        } else {
-            console.log('TMDB returned no TV results');
-            return [];
-        }
+        console.log('=== getAnimeNamesFromTitle START ===');
+        console.log('Title:', title);
         
         // Vyčistíme název pro lepší vyhledávání
-        const cleanName = searchName
+        const cleanName = title
             .replace(/Don't Toy with Me,?\s*/i, '')
             .replace(/Miss\s+/i, '')
             .replace(/Season \d+/gi, '')
+            .replace(/\s+Season$/i, '')
             .trim();
         
         console.log('Cleaned search name:', cleanName);
@@ -200,12 +182,11 @@ async function getAnimeNamesFromIMDb(imdbId) {
                     native
                 }
                 synonyms
-                idMal
             }
         }`;
         
         // Zkusíme oba názvy
-        for (const name of [searchName, cleanName]) {
+        for (const name of [title, cleanName]) {
             console.log('Searching AniList with:', name);
             
             const searchResp = await needle('post', 'https://graphql.anilist.co', {
@@ -216,7 +197,6 @@ async function getAnimeNamesFromIMDb(imdbId) {
             });
             
             console.log('AniList response status:', searchResp.statusCode);
-            console.log('AniList data:', searchResp.body?.data);
             
             if (searchResp.body && searchResp.body.data && searchResp.body.data.Media) {
                 const media = searchResp.body.data.Media;
@@ -228,17 +208,16 @@ async function getAnimeNamesFromIMDb(imdbId) {
                 if (media.synonyms) names.push(...media.synonyms);
                 
                 console.log('Found on AniList:', names);
-                console.log('=== getAnimeNamesFromIMDb SUCCESS ===');
+                console.log('=== getAnimeNamesFromTitle SUCCESS ===');
                 return [...new Set(names)];
             }
         }
         
-        console.log('Not found on AniList after trying both names');
-        console.log('=== getAnimeNamesFromIMDb FAIL ===');
+        console.log('Not found on AniList');
+        console.log('=== getAnimeNamesFromTitle FAIL ===');
     } catch (error) {
-        console.error('=== getAnimeNamesFromIMDb ERROR ===');
+        console.error('=== getAnimeNamesFromTitle ERROR ===');
         console.error('Error:', error.message);
-        console.error('Stack:', error.stack);
     }
     
     return [];
@@ -411,30 +390,40 @@ builder.defineStreamHandler(async (args) => {
 
             console.log('IMDb ID detected, checking if it is anime on AniList...');
 
-            // Zkusíme získat všechny názvy z AniList (pokud je to anime)
-            let names = await getAnimeNamesFromIMDb(imdbId);
+            // Nejdřív získáme název z Cinemeta
+            const cinemataNames = await getCinemetaName(args.type, args.id);
+            
+            if (cinemataNames.length === 0) {
+                console.log('Cinemeta returned no name');
+                return { streams: [] };
+            }
+            
+            const cinemataName = cinemataNames[0];
+            console.log('Got name from Cinemeta:', cinemataName);
+            
+            // Zkusíme najít anime na AniList podle názvu
+            let names = await getAnimeNamesFromTitle(cinemataName);
             
             if (names.length > 0) {
-                // Je to anime! Použijeme všechny názvy z AniList
+                // Je to anime! Filtrujeme latinské názvy
                 console.log('Found anime on AniList with names:', names);
                 
-                // Filtrujeme latinské názvy
                 const latinNames = names.filter(name => {
                     return /^[\x00-\x7F\u00C0-\u024F\u1E00-\u1EFF]+$/.test(name);
                 });
                 
                 console.log('Filtered to latin names:', latinNames);
                 
-                if (latinNames.length === 0) {
-                    console.log('No latin names available, trying Cinemeta');
-                    names = await getCinemetaName(args.type, args.id);
-                } else {
+                if (latinNames.length > 0) {
                     names = latinNames;
+                } else {
+                    // Žádné latinské názvy, použijeme Cinemeta
+                    names = cinemataNames;
                 }
             } else {
-                // Není to anime na AniList, použijeme Cinemeta
-                console.log('Not found on AniList, using Cinemeta');
-                names = await getCinemetaName(args.type, args.id);
+                // Není to anime na AniList, použijeme jen Cinemeta název
+                console.log('Not found on AniList, using Cinemeta name only');
+                names = cinemataNames;
             }
 
             console.log('Final names for search:', names);
