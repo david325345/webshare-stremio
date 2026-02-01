@@ -6,7 +6,7 @@ const xml2js = require('xml2js');
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '1.1.0',
+    version: '1.1.1',
     name: 'Webshare Anime',
     description: 'Anime z Webshare.cz',
     resources: ['stream'],
@@ -156,7 +156,86 @@ async function getKitsuNames(kitsuId) {
     return [];
 }
 
-// AniList GraphQL API pro získání všech variant názvů anime
+// AniList GraphQL API pro získání všech variant názvů anime z IMDb ID
+async function getAnimeNamesFromIMDb(imdbId) {
+    const query = `
+    query ($idMal: Int) {
+        Media(idMal: $idMal, type: ANIME) {
+            title {
+                romaji
+                english
+                native
+            }
+            synonyms
+        }
+    }`;
+
+    try {
+        // Nejdřív zkusíme přímo s IMDb ID na AniList
+        const queryByIMDb = `
+        query ($id: String) {
+            Media(idMal: $id, type: ANIME) {
+                title {
+                    romaji
+                    english
+                    native
+                }
+                synonyms
+                idMal
+            }
+        }`;
+        
+        // AniList bohužel nemá přímé IMDb vyhledávání, musíme použít jinou strategii
+        // Použijeme TMDB jako most: IMDb → TMDB → název → AniList search
+        
+        const tmdbUrl = `https://api.themoviedb.org/3/find/${imdbId}?api_key=0eefece0676icing90e9977c1e47c9dd&external_source=imdb_id`;
+        const tmdbResp = await needle('get', tmdbUrl);
+        
+        if (tmdbResp.body && tmdbResp.body.tv_results && tmdbResp.body.tv_results.length > 0) {
+            const tvShow = tmdbResp.body.tv_results[0];
+            const name = tvShow.name || tvShow.original_name;
+            
+            console.log('Got name from TMDB:', name);
+            
+            // Teď hledáme na AniList podle názvu
+            const searchQuery = `
+            query ($search: String) {
+                Media(search: $search, type: ANIME) {
+                    title {
+                        romaji
+                        english
+                        native
+                    }
+                    synonyms
+                }
+            }`;
+            
+            const searchResp = await needle('post', 'https://graphql.anilist.co', {
+                query: searchQuery,
+                variables: { search: name }
+            }, {
+                json: true
+            });
+            
+            if (searchResp.body && searchResp.body.data && searchResp.body.data.Media) {
+                const media = searchResp.body.data.Media;
+                const names = [];
+                
+                if (media.title.romaji) names.push(media.title.romaji);
+                if (media.title.english) names.push(media.title.english);
+                if (media.title.native) names.push(media.title.native);
+                if (media.synonyms) names.push(...media.synonyms);
+                
+                console.log('Found on AniList via TMDB:', names);
+                return [...new Set(names)];
+            }
+        }
+    } catch (error) {
+        console.error('Error getting anime names from IMDb:', error.message);
+    }
+    
+    return [];
+}
 async function getAnimeNames(imdbId) {
     const query = `
     query ($idMal: Int) {
@@ -326,7 +405,7 @@ builder.defineStreamHandler(async (args) => {
             console.log('IMDb ID detected, checking if it is anime on AniList...');
 
             // Zkusíme získat všechny názvy z AniList (pokud je to anime)
-            let names = await getAnimeNames(imdbId);
+            let names = await getAnimeNamesFromIMDb(imdbId);
             
             if (names.length > 0) {
                 // Je to anime! Použijeme všechny názvy z AniList
