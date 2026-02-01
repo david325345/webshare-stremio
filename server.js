@@ -2,6 +2,7 @@ const axios = require('axios');
 const NodeCache = require('node-cache');
 const express = require('express');
 const xml2js = require('xml2js');
+const crypto = require('crypto');
 
 const tokenCache = new NodeCache({ stdTTL: 3600 });
 const searchCache = new NodeCache({ stdTTL: 600 });
@@ -15,6 +16,38 @@ class WebshareAPI {
         this.token = null;
     }
 
+    md5(str) {
+        return crypto.createHash('md5').update(str).digest('hex');
+    }
+
+    sha1(str) {
+        return crypto.createHash('sha1').update(str).digest('hex');
+    }
+
+    async getSalt() {
+        const params = new URLSearchParams();
+        params.append('username_or_email', this.username);
+
+        const response = await axios.post(`${this.baseUrl}/salt/`, params, {
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
+        });
+
+        const result = await parser.parseStringPromise(response.data);
+        
+        if (result.response.status[0] !== 'OK') {
+            throw new Error('Failed to get salt');
+        }
+
+        return result.response.salt[0];
+    }
+
+    hashPassword(password, salt) {
+        // Simplified version - just use MD5 of password + salt
+        const hash = this.md5(password);
+        const digest = this.md5(this.username + ':Webshare:' + hash);
+        return { password: hash, digest: digest };
+    }
+
     async login() {
         const cacheKey = `token_${this.username}`;
         const cached = tokenCache.get(cacheKey);
@@ -23,24 +56,34 @@ class WebshareAPI {
             return cached;
         }
 
-        const params = new URLSearchParams();
-        params.append('username_or_email', this.username);
-        params.append('password', this.password);
-        params.append('keep_logged_in', '1');
+        try {
+            const salt = await this.getSalt();
+            const { password, digest } = this.hashPassword(this.password, salt);
 
-        const response = await axios.post(`${this.baseUrl}/login/`, params, {
-            headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
-        });
+            const params = new URLSearchParams();
+            params.append('username_or_email', this.username);
+            params.append('password', password);
+            params.append('digest', digest);
+            params.append('keep_logged_in', '1');
 
-        const result = await parser.parseStringPromise(response.data);
-        
-        if (result.response.status[0] !== 'OK') {
-            throw new Error('Login failed');
+            const response = await axios.post(`${this.baseUrl}/login/`, params, {
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
+            });
+
+            const result = await parser.parseStringPromise(response.data);
+            
+            if (result.response.status[0] !== 'OK') {
+                console.error('Login failed:', result.response);
+                throw new Error('Login failed');
+            }
+
+            this.token = result.response.token[0];
+            tokenCache.set(cacheKey, this.token);
+            return this.token;
+        } catch (error) {
+            console.error('Login error:', error.message);
+            throw error;
         }
-
-        this.token = result.response.token[0];
-        tokenCache.set(cacheKey, this.token);
-        return this.token;
     }
 
     async search(query) {
@@ -64,6 +107,7 @@ class WebshareAPI {
             const result = await parser.parseStringPromise(response.data);
             
             if (result.response.status[0] !== 'OK') {
+                console.log('Search returned non-OK status');
                 return [];
             }
 
@@ -118,10 +162,6 @@ async function getStreams(username, password, type, id) {
         console.log('Searching for:', query);
         const results = await api.search(query);
         
-        console.log('Results type:', typeof results);
-        console.log('Results is array:', Array.isArray(results));
-        console.log('Results:', JSON.stringify(results).substring(0, 200));
-        
         if (!results || results.length === 0) {
             console.log('No results found');
             return { streams: [] };
@@ -129,20 +169,24 @@ async function getStreams(username, password, type, id) {
 
         console.log(`Found ${results.length} results`);
         
-        const filesToProcess = Array.isArray(results) ? results.slice(0, 10) : [results].slice(0, 10);
+        const filesToProcess = Array.isArray(results) ? results : [results];
         
         const streams = await Promise.all(
-            filesToProcess.map(async (file) => {
+            filesToProcess.slice(0, 10).map(async (file) => {
                 try {
                     const ident = file.ident[0];
                     const name = file.name ? file.name[0] : (file.n ? file.n[0] : 'Unknown');
                     const link = await api.getFileLink(ident);
                     
-                    return link ? {
-                        name: `Webshare`,
-                        title: name,
-                        url: link
-                    } : null;
+                    if (link) {
+                        console.log('Got link for:', name);
+                        return {
+                            name: `Webshare`,
+                            title: name,
+                            url: link
+                        };
+                    }
+                    return null;
                 } catch (error) {
                     console.error('Error processing file:', error.message);
                     return null;
