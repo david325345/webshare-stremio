@@ -6,7 +6,7 @@ const xml2js = require('xml2js');
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '1.0.3',
+    version: '1.0.4',
     name: 'Webshare Anime',
     description: 'Anime z Webshare.cz',
     resources: ['stream'],
@@ -278,10 +278,10 @@ builder.defineStreamHandler(async (args) => {
             
             console.log('Parsed - kitsuId:', kitsuId, 'episode:', episode, 'season:', season);
 
-            // Pokud není číslo epizody, nemůžeme filtrovat - vrátíme prázdné výsledky
+            // Pokud není číslo epizody, hledáme obecně celý seriál
+            // (metadata addon neposílá správný formát)
             if (!episode) {
-                console.log('No episode number provided, returning empty streams');
-                return { streams: [] };
+                console.log('No episode number - searching for entire series');
             }
 
             // Získáme názvy z Kitsu API
@@ -314,6 +314,7 @@ builder.defineStreamHandler(async (args) => {
                 const seasonEp = `S${String(season).padStart(2, '0')}E${String(episode).padStart(2, '0')}`;
                 searchQueries.push(`${mainName} ${seasonEp}`);
             } else {
+                // Žádné číslo epizody - hledáme jen název
                 searchQueries.push(mainName);
             }
         } else if (args.id.startsWith('tt')) {
@@ -400,6 +401,7 @@ builder.defineStreamHandler(async (args) => {
                 targetEpisode = parseInt(parts[2]);
             }
             
+            // Pouze filtrujeme, pokud máme číslo epizody
             if (targetSeason && targetEpisode) {
                 console.log(`Filtering for season ${targetSeason}, episode ${targetEpisode}`);
                 
@@ -444,6 +446,8 @@ builder.defineStreamHandler(async (args) => {
                     console.log('No exact matches, returning all results');
                     filteredResults = results;
                 }
+            } else {
+                console.log('No episode number to filter - showing all results');
             }
         }
 
@@ -461,7 +465,16 @@ builder.defineStreamHandler(async (args) => {
             if (aHasCZSK && !bHasCZSK) return -1;
             if (!aHasCZSK && bHasCZSK) return 1;
             
-            // Pokud oba mají nebo nemají CZ/SK, seřadíme podle velikosti (větší = lepší kvalita)
+            // Seřadit podle čísla epizody v názvu (E01, E02, atd.)
+            const aMatch = a.name.match(/[SE](\d+)/i);
+            const bMatch = b.name.match(/[SE](\d+)/i);
+            if (aMatch && bMatch) {
+                const aNum = parseInt(aMatch[1]);
+                const bNum = parseInt(bMatch[1]);
+                if (aNum !== bNum) return aNum - bNum;
+            }
+            
+            // Pak podle velikosti (větší = lepší kvalita)
             return parseInt(b.size) - parseInt(a.size);
         });
 
@@ -469,8 +482,12 @@ builder.defineStreamHandler(async (args) => {
             return { streams: [] };
         }
 
-        // Vytvoříme streamy pro každý výsledek (max 10 pro rychlost)
-        const filesToProcess = filteredResults.slice(0, 10);
+        // Vytvoříme streamy pro každý výsledek
+        // Pokud nemáme číslo epizody, vrátíme víc výsledků (20) aby uživatel viděl všechny epizody
+        const hasEpisodeNumber = args.id.split(':').length >= 3;
+        const maxStreams = hasEpisodeNumber ? 10 : 20;
+        
+        const filesToProcess = filteredResults.slice(0, maxStreams);
         console.log(`Processing ${filesToProcess.length} files for links...`);
         
         const streams = [];
