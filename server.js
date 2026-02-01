@@ -1,4 +1,3 @@
-const { addonBuilder } = require('stremio-addon-sdk');
 const axios = require('axios');
 const NodeCache = require('node-cache');
 const express = require('express');
@@ -79,50 +78,47 @@ class WebshareAPI {
     }
 }
 
-function createAddon(username, password) {
-    const manifest = {
-        id: `cz.webshare.${Buffer.from(username).toString('base64').substring(0, 10)}`,
-        version: '1.0.0',
-        name: 'Webshare Anime',
-        description: 'Anime z Webshare.cz',
-        resources: ['stream'],
-        types: ['series', 'movie'],
-        catalogs: []
-    };
+async function getStreams(username, password, type, id) {
+    try {
+        const api = new WebshareAPI(username, password);
+        
+        const parts = id.split(':');
+        let query = parts[0];
+        const season = parts[1];
+        const episode = parts[2];
+        
+        if (type === 'series' && season && episode) {
+            query = `S${String(season).padStart(2, '0')}E${String(episode).padStart(2, '0')}`;
+        }
 
-    const builder = new addonBuilder(manifest);
-    const api = new WebshareAPI(username, password);
+        console.log('Searching for:', query);
+        const results = await api.search(query);
+        
+        if (!results || !results.length) {
+            return { streams: [] };
+        }
 
-    builder.defineStreamHandler(async (args) => {
-        try {
-            let query = args.name || args.id;
-            
-            if (args.type === 'series' && args.season && args.episode) {
-                query = `${query} S${String(args.season).padStart(2, '0')}E${String(args.episode).padStart(2, '0')}`;
-            }
-
-            const results = await api.search(query);
-            if (!results || !results.length) return { streams: [] };
-
-            const streams = await Promise.all(
-                results.slice(0, 10).map(async (file) => {
+        const streams = await Promise.all(
+            results.slice(0, 10).map(async (file) => {
+                try {
                     const link = await api.getFileLink(file.ident);
                     return link ? {
-                        name: `Webshare\n${file.name}`,
+                        name: `Webshare`,
                         title: file.name,
                         url: link
                     } : null;
-                })
-            );
+                } catch (error) {
+                    console.error('Error getting link:', error.message);
+                    return null;
+                }
+            })
+        );
 
-            return { streams: streams.filter(s => s !== null) };
-        } catch (error) {
-            console.error('Error:', error);
-            return { streams: [] };
-        }
-    });
-
-    return builder.getInterface();
+        return { streams: streams.filter(s => s !== null) };
+    } catch (error) {
+        console.error('Stream error:', error.message);
+        return { streams: [] };
+    }
 }
 
 const app = express();
@@ -261,11 +257,22 @@ app.get('/', (req, res) => {
 
 app.get('/:creds/manifest.json', (req, res) => {
     try {
-        const [username, password] = Buffer.from(req.params.creds, 'base64').toString().split(':');
-        const addon = createAddon(username, password);
+        const [username] = Buffer.from(req.params.creds, 'base64').toString().split(':');
+        
+        const manifest = {
+            id: `cz.webshare.${Buffer.from(username).toString('base64').substring(0, 10)}`,
+            version: '1.0.0',
+            name: 'Webshare Anime',
+            description: 'Anime z Webshare.cz',
+            resources: ['stream'],
+            types: ['series', 'movie'],
+            catalogs: [],
+            idPrefixes: ['tt', 'kitsu']
+        };
+        
         res.setHeader('Access-Control-Allow-Origin', '*');
         res.setHeader('Content-Type', 'application/json');
-        res.json(addon.manifest);
+        res.json(manifest);
     } catch (error) {
         res.status(400).json({ error: 'Invalid credentials' });
     }
@@ -274,17 +281,11 @@ app.get('/:creds/manifest.json', (req, res) => {
 app.get('/:creds/stream/:type/:id.json', async (req, res) => {
     try {
         const [username, password] = Buffer.from(req.params.creds, 'base64').toString().split(':');
-        const addon = createAddon(username, password);
         
         res.setHeader('Access-Control-Allow-Origin', '*');
         res.setHeader('Content-Type', 'application/json');
         
-        const handler = addon.handlers.stream;
-        const result = await handler({
-            type: req.params.type,
-            id: req.params.id.replace('.json', '')
-        });
-        
+        const result = await getStreams(username, password, req.params.type, req.params.id.replace('.json', ''));
         res.json(result);
     } catch (error) {
         console.error('Stream error:', error);
