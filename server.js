@@ -263,6 +263,8 @@ app.get('/:creds/manifest.json', (req, res) => {
     try {
         const [username, password] = Buffer.from(req.params.creds, 'base64').toString().split(':');
         const addon = createAddon(username, password);
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        res.setHeader('Content-Type', 'application/json');
         res.json(addon.manifest);
     } catch (error) {
         res.status(400).json({ error: 'Invalid credentials' });
@@ -273,9 +275,19 @@ app.get('/:creds/stream/:type/:id.json', async (req, res) => {
     try {
         const [username, password] = Buffer.from(req.params.creds, 'base64').toString().split(':');
         const addon = createAddon(username, password);
-        const result = await addon.get(req.path);
+        
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        res.setHeader('Content-Type', 'application/json');
+        
+        const handler = addon.handlers.stream;
+        const result = await handler({
+            type: req.params.type,
+            id: req.params.id.replace('.json', '')
+        });
+        
         res.json(result);
     } catch (error) {
+        console.error('Stream error:', error);
         res.json({ streams: [] });
     }
 });
