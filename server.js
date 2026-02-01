@@ -6,7 +6,7 @@ const xml2js = require('xml2js');
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '1.1.1',
+    version: '1.2.0',
     name: 'Webshare Anime',
     description: 'Anime z Webshare.cz',
     resources: ['stream'],
@@ -438,12 +438,13 @@ builder.defineStreamHandler(async (args) => {
                 console.log('Using multiple names from AniList for better coverage');
                 if (args.type === 'series' && season && episode) {
                     const seasonEp = `S${String(season).padStart(2, '0')}E${String(episode).padStart(2, '0')}`;
-                    // Použijeme všechny názvy
-                    for (const name of names) {
+                    // Použijeme jen první 2 názvy (romaji + english)
+                    for (const name of names.slice(0, 2)) {
                         searchQueries.push(`${name} ${seasonEp}`);
                     }
                 } else {
-                    searchQueries = names;
+                    // Jen první 2 názvy
+                    searchQueries = names.slice(0, 2);
                 }
             } else {
                 // Jen jeden název (z Cinemeta) - použijeme jen ten
