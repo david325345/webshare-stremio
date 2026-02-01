@@ -61,15 +61,28 @@ async function login(username, saltedPassword) {
 
 async function search(query, token) {
     console.log('Searching:', query);
-    const params = `what=${encodeURIComponent(query)}&category=video&limit=20&wst=${encodeURIComponent(token)}`;
+    const params = `what=${encodeURIComponent(query)}&category=video&limit=100&wst=${encodeURIComponent(token)}`;
     const resp = await needle('post', 'https://webshare.cz/api/search/', params, { headers });
     
     const files = resp.body.children.filter(el => el.name == 'file');
     return files.map(el => {
-        const ident = el.children.find(c => c.name == 'ident').value;
-        const name = el.children.find(c => c.name == 'name').value;
-        const size = el.children.find(c => c.name == 'size').value;
-        return { ident, name, size };
+        const ident = el.children.find(c => c.name == 'ident')?.value;
+        const name = el.children.find(c => c.name == 'name')?.value;
+        const size = el.children.find(c => c.name == 'size')?.value;
+        const type = el.children.find(c => c.name == 'type')?.value;
+        const img = el.children.find(c => c.name == 'img')?.value;
+        const positive_votes = el.children.find(c => c.name == 'positive_votes')?.value || '0';
+        const negative_votes = el.children.find(c => c.name == 'negative_votes')?.value || '0';
+        
+        return { 
+            ident, 
+            name, 
+            size: parseInt(size || 0),
+            type,
+            img,
+            positive_votes: parseInt(positive_votes),
+            negative_votes: parseInt(negative_votes)
+        };
     });
 }
 
@@ -82,6 +95,43 @@ async function getFileLink(ident, token) {
         return resp.body.children.find(el => el.name == 'link').value;
     }
     return null;
+}
+
+// Formátování velikosti souboru
+function formatSize(bytes) {
+    if (bytes === 0) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+}
+
+// Detekce rozlišení a kvality z názvu souboru
+function detectQuality(filename) {
+    const nameUpper = filename.toUpperCase();
+    
+    // Rozlišení
+    const resolutions = ['2160P', '1080P', '720P', '480P', '360P', '4K', 'UHD', 'FHD', 'HD'];
+    const resolution = resolutions.find(res => nameUpper.includes(res));
+    
+    // Codec
+    const codecs = ['H265', 'H.265', 'HEVC', 'H264', 'H.264', 'X264', 'X265', 'AVC', 'XVID'];
+    const codec = codecs.find(c => nameUpper.includes(c));
+    
+    // Audio
+    const audioFormats = ['DTS', 'AC3', 'AAC', 'FLAC', 'MP3', 'OPUS', 'DD5.1', 'DD+'];
+    const audio = audioFormats.find(a => nameUpper.includes(a));
+    
+    // Source
+    const sources = ['BLURAY', 'BLU-RAY', 'BDRIP', 'WEBRIP', 'WEB-DL', 'WEBDL', 'HDTV', 'DVDRIP'];
+    const source = sources.find(s => nameUpper.includes(s));
+    
+    return {
+        resolution: resolution || 'SD',
+        codec,
+        audio,
+        source
+    };
 }
 
 // Kitsu API pro získání názvu z Kitsu ID
@@ -230,10 +280,16 @@ builder.defineStreamHandler(async (args) => {
                 return { streams: [] };
             }
 
-            // Pro každý název vytvoříme search query
+            // Pro každý název vytvoříme více search variant pro Kitsu
             if (args.type === 'series' && season && episode) {
                 const seasonEp = `S${String(season).padStart(2, '0')}E${String(episode).padStart(2, '0')}`;
-                searchQueries = names.map(name => `${name} ${seasonEp}`);
+                const seasonOnly = `S${String(season).padStart(2, '0')}`;
+                
+                for (const name of names) {
+                    searchQueries.push(`${name} ${seasonEp}`);
+                    searchQueries.push(`${name} ${seasonOnly}`);
+                    searchQueries.push(name);
+                }
             } else {
                 searchQueries = names;
             }
@@ -259,10 +315,16 @@ builder.defineStreamHandler(async (args) => {
                 return { streams: [] };
             }
 
-            // Pro každý název vytvoříme search query
+            // Pro každý název vytvoříme více search variant pro IMDb
             if (args.type === 'series' && season && episode) {
                 const seasonEp = `S${String(season).padStart(2, '0')}E${String(episode).padStart(2, '0')}`;
-                searchQueries = names.map(name => `${name} ${seasonEp}`);
+                const seasonOnly = `S${String(season).padStart(2, '0')}`;
+                
+                for (const name of names) {
+                    searchQueries.push(`${name} ${seasonEp}`);
+                    searchQueries.push(`${name} ${seasonOnly}`);
+                    searchQueries.push(name);
+                }
             } else {
                 searchQueries = names;
             }
@@ -360,16 +422,30 @@ builder.defineStreamHandler(async (args) => {
 
         // Vytvoříme streamy pro každý výsledek
         const streams = await Promise.all(
-            filteredResults.slice(0, 20).map(async (file) => {
+            filteredResults.slice(0, 50).map(async (file) => {
                 try {
                     const link = await getFileLink(file.ident, token);
                     if (link) {
+                        const quality = detectQuality(file.name);
+                        
+                        // Sestavíme popis s metadaty
+                        let description = file.name;
+                        description += `\n💾 ${formatSize(file.size)}`;
+                        if (quality.resolution) description += ` | 📺 ${quality.resolution}`;
+                        if (quality.codec) description += ` | 🎬 ${quality.codec}`;
+                        if (quality.audio) description += ` | 🔊 ${quality.audio}`;
+                        if (quality.source) description += ` | 📀 ${quality.source}`;
+                        description += `\n👍 ${file.positive_votes} | 👎 ${file.negative_votes}`;
+                        
                         return {
-                            name: 'Webshare',
+                            name: `Webshare ${quality.resolution}`,
                             title: file.name,
                             url: link,
+                            description: description,
                             behaviorHints: {
-                                bingeGroup: 'webshare-anime'
+                                bingeGroup: 'webshare-anime',
+                                videoSize: file.size,
+                                filename: file.name
                             }
                         };
                     }
