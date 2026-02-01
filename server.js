@@ -250,9 +250,15 @@ async function getCinemetaName(type, id) {
 }
 
 builder.defineStreamHandler(async (args) => {
+    console.log('=== STREAM REQUEST ===');
+    console.log('Type:', args.type);
+    console.log('ID:', args.id);
+    console.log('Config:', args.config ? 'present' : 'missing');
+    
     try {
         const { username, password } = args.config;
         if (!username || !password) {
+            console.log('Missing credentials');
             return { streams: [] };
         }
 
@@ -356,8 +362,17 @@ builder.defineStreamHandler(async (args) => {
         let filteredResults = results;
         if (args.type === 'series') {
             const parts = args.id.split(':');
-            const targetSeason = parseInt(parts[parts.length - 2]);
-            const targetEpisode = parseInt(parts[parts.length - 1]);
+            let targetSeason, targetEpisode;
+            
+            // Kitsu formát: kitsu:ID:season:episode (4 části)
+            // IMDb formát: tt:season:episode (3 části)
+            if (parts[0].startsWith('kitsu')) {
+                targetSeason = parseInt(parts[2]);
+                targetEpisode = parseInt(parts[3]);
+            } else {
+                targetSeason = parseInt(parts[1]);
+                targetEpisode = parseInt(parts[2]);
+            }
             
             if (targetSeason && targetEpisode) {
                 console.log(`Filtering for season ${targetSeason}, episode ${targetEpisode}`);
@@ -459,7 +474,10 @@ builder.defineStreamHandler(async (args) => {
 
         return { streams: streams.filter(s => s !== null) };
     } catch (error) {
-        console.error('Stream handler error:', error.message, error.stack);
+        console.error('=== STREAM HANDLER ERROR ===');
+        console.error('Error:', error.message);
+        console.error('Stack:', error.stack);
+        console.error('Args:', JSON.stringify(args));
         return { streams: [] };
     }
 });
