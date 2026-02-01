@@ -84,6 +84,32 @@ async function getFileLink(ident, token) {
     return null;
 }
 
+// Kitsu API pro získání názvu z Kitsu ID
+async function getKitsuNames(kitsuId) {
+    try {
+        const resp = await needle('get', `https://kitsu.io/api/edge/anime/${kitsuId}`);
+        
+        if (resp.body && resp.body.data && resp.body.data.attributes) {
+            const attrs = resp.body.data.attributes;
+            const names = [];
+            
+            if (attrs.canonicalTitle) names.push(attrs.canonicalTitle);
+            if (attrs.titles) {
+                if (attrs.titles.en) names.push(attrs.titles.en);
+                if (attrs.titles.en_jp) names.push(attrs.titles.en_jp);
+                if (attrs.titles.ja_jp) names.push(attrs.titles.ja_jp);
+            }
+            if (attrs.abbreviatedTitles) names.push(...attrs.abbreviatedTitles);
+            
+            console.log('Kitsu names:', names);
+            return [...new Set(names)]; // Odstranění duplicit
+        }
+    } catch (error) {
+        console.error('Error getting names from Kitsu:', error.message);
+    }
+    return [];
+}
+
 // AniList GraphQL API pro získání všech variant názvů anime
 async function getAnimeNames(imdbId) {
     const query = `
@@ -187,7 +213,31 @@ builder.defineStreamHandler(async (args) => {
         // Získáme všechny varianty názvů
         let searchQueries = [];
         
-        if (args.id.startsWith('tt')) {
+        if (args.id.startsWith('kitsu:')) {
+            // Kitsu ID
+            const parts = args.id.split(':');
+            const kitsuId = parts[1];
+            const season = parts[2];
+            const episode = parts[3];
+
+            // Získáme názvy z Kitsu API
+            const names = await getKitsuNames(kitsuId);
+            
+            console.log('Found names from Kitsu:', names);
+
+            if (names.length === 0) {
+                console.log('No names found from Kitsu, returning empty');
+                return { streams: [] };
+            }
+
+            // Pro každý název vytvoříme search query
+            if (args.type === 'series' && season && episode) {
+                const seasonEp = `S${String(season).padStart(2, '0')}E${String(episode).padStart(2, '0')}`;
+                searchQueries = names.map(name => `${name} ${seasonEp}`);
+            } else {
+                searchQueries = names;
+            }
+        } else if (args.id.startsWith('tt')) {
             const parts = args.id.split(':');
             const imdbId = parts[0];
             const season = parts[1];
