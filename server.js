@@ -6,7 +6,7 @@ const xml2js = require('xml2js');
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '1.6.1',
+    version: '1.6.3',
     name: 'Webshare Anime',
     description: 'Anime z Webshare.cz',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -569,7 +569,14 @@ builder.defineStreamHandler(async (args) => {
                     const episodeOnlyPatterns = [
                         new RegExp(`E${String(targetEpisode).padStart(2, '0')}[^0-9]`, 'i'),
                         new RegExp(`E${String(targetEpisode).padStart(2, '0')}$`, 'i'),
-                        new RegExp(`[\\s\\-_\\.]${String(targetEpisode).padStart(2, '0')}[\\s\\-_\\.]`, 'i'),
+                        // Jen číslo: " 03 ", "-03-", "-03.", "_03_", "[03]", "(03)"
+                        new RegExp(`[\\s\\-_\\.\\[\\(]${String(targetEpisode).padStart(2, '0')}[\\s\\-_\\.\\]\\)]`, 'i'),
+                        new RegExp(`[\\s\\-_\\.\\[\\(]${String(targetEpisode).padStart(2, '0')}$`, 'i'),
+                        // Varianta bez nuly: " 3 ", "-3-", "[3]" (pro epizody 1-9)
+                        ...(targetEpisode < 10 ? [
+                            new RegExp(`[\\s\\-_\\.\\[\\(]${targetEpisode}[\\s\\-_\\.\\]\\)]`, 'i'),
+                            new RegExp(`[\\s\\-_\\.\\[\\(]${targetEpisode}$`, 'i'),
+                        ] : [])
                     ];
                     
                     const hasEpisodePattern = episodeOnlyPatterns.some(p => p.test(nameUpper));
@@ -595,24 +602,36 @@ builder.defineStreamHandler(async (args) => {
                 
                 console.log(`Filtered to ${filteredResults.length} results matching episode`);
                 
-                // Pokud nic nenajdeme, zkusíme méně přísný filtr (jen číslo epizody bez názvu)
+                // Pokud nic nenajdeme, zkusíme nejbližší epizody (±2 epizody)
                 if (filteredResults.length === 0) {
-                    console.log('No matches with title filter, trying episode number only');
+                    console.log('No exact match, trying nearby episodes (±2)');
+                    
+                    const nearbyEpisodes = [];
+                    for (let offset = -2; offset <= 2; offset++) {
+                        if (offset === 0) continue;
+                        const nearbyEp = targetEpisode + offset;
+                        if (nearbyEp > 0) nearbyEpisodes.push(nearbyEp);
+                    }
+                    
                     filteredResults = results.filter(result => {
                         const nameUpper = result.name.toUpperCase();
-                        const exactPatterns = [
-                            `S${String(targetSeason).padStart(2, '0')}E${String(targetEpisode).padStart(2, '0')}`,
-                            `S${targetSeason}E${String(targetEpisode).padStart(2, '0')}`,
-                        ];
-                        const episodeOnlyPatterns = [
-                            new RegExp(`E${String(targetEpisode).padStart(2, '0')}[^0-9]`, 'i'),
-                            new RegExp(`E${String(targetEpisode).padStart(2, '0')}$`, 'i'),
-                            new RegExp(`[\\s\\-_\\.]${String(targetEpisode).padStart(2, '0')}[\\s\\-_\\.]`, 'i'),
-                        ];
-                        return exactPatterns.some(p => nameUpper.includes(p)) ||
-                               episodeOnlyPatterns.some(p => p.test(nameUpper));
+                        
+                        // Hledáme jakoukoliv z blízkých epizod
+                        return nearbyEpisodes.some(ep => {
+                            const patterns = [
+                                `S${String(targetSeason).padStart(2, '0')}E${String(ep).padStart(2, '0')}`,
+                                `S${targetSeason}E${String(ep).padStart(2, '0')}`,
+                                `E${String(ep).padStart(2, '0')}`,
+                                new RegExp(`[\\s\\-_\\.\\[\\(]${String(ep).padStart(2, '0')}[\\s\\-_\\.\\]\\)]`, 'i'),
+                            ];
+                            return patterns.some(p => {
+                                if (typeof p === 'string') return nameUpper.includes(p);
+                                return p.test(nameUpper);
+                            });
+                        });
                     });
-                    console.log(`Relaxed filter found ${filteredResults.length} results`);
+                    
+                    console.log(`Found ${filteredResults.length} nearby episodes`);
                 }
             } else {
                 console.log('No episode number to filter - showing all results');
