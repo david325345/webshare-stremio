@@ -745,3 +745,47 @@ builder.defineStreamHandler(async (args) => {
 });
 
 serveHTTP(builder.getInterface(), { port: process.env.PORT || 7000 });
+
+// ========== KEEP-ALIVE CRON JOB ==========
+const cron = require('node-cron');
+
+let serverWokenUp = false;
+
+// Detekce prvního requestu po probuzení
+const originalDefineResourceHandler = builder.defineResourceHandler.bind(builder);
+builder.defineResourceHandler = function(...args) {
+    const result = originalDefineResourceHandler(...args);
+    if (!serverWokenUp) {
+        serverWokenUp = true;
+        console.log('🚀 Server woken up - starting keep-alive pings until midnight');
+    }
+    return result;
+};
+
+// Ping každých 10 minut (pokud byl server probuzen a není po půlnoci)
+cron.schedule('*/10 * * * *', async () => {
+    const now = new Date();
+    const hour = now.getHours();
+    
+    // Reset po půlnoci (00:00 - 05:59)
+    if (hour >= 0 && hour < 6) {
+        if (serverWokenUp) {
+            console.log('🌙 Midnight passed - stopping pings, resetting wake flag');
+            serverWokenUp = false;
+        }
+        return;
+    }
+    
+    // Pinguj jen pokud byl server již probuzen
+    if (!serverWokenUp) return;
+    
+    try {
+        const url = process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000';
+        console.log(`⏰ Keep-alive ping: ${now.toLocaleTimeString()}`);
+        await needle('get', `${url}/manifest.json`, { timeout: 5000 });
+    } catch (error) {
+        console.error('❌ Keep-alive ping failed:', error.message);
+    }
+});
+
+console.log('✅ Keep-alive scheduler initialized');
