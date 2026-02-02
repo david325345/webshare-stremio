@@ -6,7 +6,7 @@ const xml2js = require('xml2js');
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '1.5.3',
+    version: '1.6.0',
     name: 'Webshare Anime',
     description: 'Anime z Webshare.cz',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -813,24 +813,9 @@ cron.schedule('*/10 * * * *', async () => {
 
 console.log('✅ Keep-alive scheduler initialized');
 
-// ========== STATIC FILES SERVER ==========
-// Servírování statických souborů (logo)
-const fs = require('fs');
-const publicPath = path.join(__dirname, 'public');
-
-// Pokud existuje public složka, servírujeme ji
-if (fs.existsSync(publicPath)) {
-    console.log('✅ Public folder found - serving static files');
-    serveHTTP(builder.getInterface(), {
-        port: process.env.PORT || 7000,
-        static: publicPath,
-        cacheMaxAge: 3600
-    });
-} else {
-    console.log('⚠️  Public folder not found - serving addon only');
-    serveHTTP(builder.getInterface(), {
-        port: process.env.PORT || 7000
-    });
-}
+// ========== SERVER START ==========
+serveHTTP(builder.getInterface(), {
+    port: process.env.PORT || 7000
+});
 
 console.log(`HTTP addon accessible at: http://localhost:${process.env.PORT || 7000}/manifest.json`);
