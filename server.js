@@ -6,9 +6,10 @@ const xml2js = require('xml2js');
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '1.5.0',
+    version: '1.5.3',
     name: 'Webshare Anime',
     description: 'Anime z Webshare.cz',
+    logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
     resources: ['stream'],
     types: ['series', 'movie'],
     catalogs: [],
@@ -30,6 +31,10 @@ const manifest = {
 };
 
 const builder = new addonBuilder(manifest);
+
+// Nastavení Express pro servírování statických souborů (logo)
+const express = require('express');
+const path = require('path');
 
 const headers = {
     'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
@@ -408,19 +413,38 @@ builder.defineStreamHandler(async (args) => {
             let names = await getAnimeNamesFromTitle(cinemataName);
             
             if (names.length > 0) {
-                // Je to anime! Filtrujeme latinské názvy
-                console.log('Found anime on AniList with names:', names);
+                // Zkontrolujeme, jestli je to opravdu stejné anime
+                // Porovnáme první název z AniList s Cinemeta názvem
+                const anilistFirstName = names[0].toLowerCase();
+                const cinemataNameLower = cinemataName.toLowerCase();
                 
-                const latinNames = names.filter(name => {
-                    return /^[\x00-\x7F\u00C0-\u024F\u1E00-\u1EFF]+$/.test(name);
-                });
+                // Spočítáme kolik slov se shoduje
+                const cinemataWords = cinemataNameLower.split(/\s+/).filter(w => w.length > 3);
+                const matchingWords = cinemataWords.filter(word => anilistFirstName.includes(word)).length;
+                const similarity = cinemataWords.length > 0 ? matchingWords / cinemataWords.length : 0;
                 
-                console.log('Filtered to latin names:', latinNames);
+                console.log(`Similarity check: ${similarity.toFixed(2)} (${matchingWords}/${cinemataWords.length} words match)`);
                 
-                if (latinNames.length > 0) {
-                    names = latinNames;
+                // Pokud se názvy shodují aspoň z 30%, je to pravděpodobně správné anime
+                if (similarity >= 0.3) {
+                    // Je to anime! Filtrujeme latinské názvy
+                    console.log('Found anime on AniList with names:', names);
+                    
+                    const latinNames = names.filter(name => {
+                        return /^[\x00-\x7F\u00C0-\u024F\u1E00-\u1EFF]+$/.test(name);
+                    });
+                    
+                    console.log('Filtered to latin names:', latinNames);
+                    
+                    if (latinNames.length > 0) {
+                        names = latinNames;
+                    } else {
+                        // Žádné latinské názvy, použijeme Cinemeta
+                        names = cinemataNames;
+                    }
                 } else {
-                    // Žádné latinské názvy, použijeme Cinemeta
+                    // Názvy se příliš neshodují - pravděpodobně špatný match
+                    console.log('AniList result too different from Cinemeta - using Cinemeta name only');
                     names = cinemataNames;
                 }
             } else {
@@ -744,7 +768,6 @@ builder.defineStreamHandler(async (args) => {
     }
 });
 
-serveHTTP(builder.getInterface(), { port: process.env.PORT || 7000 });
 
 // ========== KEEP-ALIVE CRON JOB ==========
 const cron = require('node-cron');
@@ -789,3 +812,20 @@ cron.schedule('*/10 * * * *', async () => {
 });
 
 console.log('✅ Keep-alive scheduler initialized');
+
+// ========== STATIC FILES SERVER ==========
+// Servírování statických souborů (logo)
+const addonInterface = builder.getInterface();
+const app = require('express')();
+
+// Statické soubory z public složky
+app.use(require('express').static(path.join(__dirname, 'public')));
+
+// Stremio addon routes
+app.use(addonInterface);
+
+// Start serveru
+const server = require('http').createServer(app);
+server.listen(process.env.PORT || 7000, () => {
+    console.log(`HTTP addon accessible at: http://localhost:${process.env.PORT || 7000}/manifest.json`);
+});
