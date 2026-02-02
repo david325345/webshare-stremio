@@ -815,17 +815,13 @@ console.log('✅ Keep-alive scheduler initialized');
 
 // ========== STATIC FILES SERVER ==========
 // Servírování statických souborů (logo)
-const addonInterface = builder.getInterface();
-const app = require('express')();
+const express = require('express');
+const landingHTML = `<h1>Webshare Stremio Addon</h1>`;
 
-// Statické soubory z public složky
-app.use(require('express').static(path.join(__dirname, 'public')));
-
-// Stremio addon routes
-app.use(addonInterface);
-
-// Start serveru
-const server = require('http').createServer(app);
-server.listen(process.env.PORT || 7000, () => {
-    console.log(`HTTP addon accessible at: http://localhost:${process.env.PORT || 7000}/manifest.json`);
+serveHTTP(builder.getInterface(), {
+    port: process.env.PORT || 7000,
+    static: path.join(__dirname, 'public'),
+    cacheMaxAge: 3600
 });
+
+console.log(`HTTP addon accessible at: http://localhost:${process.env.PORT || 7000}/manifest.json`);
