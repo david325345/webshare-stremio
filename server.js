@@ -815,12 +815,22 @@ console.log('✅ Keep-alive scheduler initialized');
 
 // ========== STATIC FILES SERVER ==========
 // Servírování statických souborů (logo)
-const landingHTML = `<h1>Webshare Stremio Addon</h1>`;
+const fs = require('fs');
+const publicPath = path.join(__dirname, 'public');
 
-serveHTTP(builder.getInterface(), {
-    port: process.env.PORT || 7000,
-    static: path.join(__dirname, 'public'),
-    cacheMaxAge: 3600
-});
+// Pokud existuje public složka, servírujeme ji
+if (fs.existsSync(publicPath)) {
+    console.log('✅ Public folder found - serving static files');
+    serveHTTP(builder.getInterface(), {
+        port: process.env.PORT || 7000,
+        static: publicPath,
+        cacheMaxAge: 3600
+    });
+} else {
+    console.log('⚠️  Public folder not found - serving addon only');
+    serveHTTP(builder.getInterface(), {
+        port: process.env.PORT || 7000
+    });
+}
 
 console.log(`HTTP addon accessible at: http://localhost:${process.env.PORT || 7000}/manifest.json`);
