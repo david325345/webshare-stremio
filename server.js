@@ -6,7 +6,7 @@ const xml2js = require('xml2js');
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '1.6.0',
+    version: '1.6.1',
     name: 'Webshare Anime',
     description: 'Anime z Webshare.cz',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -540,48 +540,57 @@ builder.defineStreamHandler(async (args) => {
                     const nameUpper = result.name.toUpperCase();
                     const nameLower = result.name.toLowerCase();
                     
-                    // 1) Musí obsahovat číslo epizody
+                    // 1) Přesné patterny s číslem sezóny a epizody
                     const exactPatterns = [
-                        `S${String(targetSeason).padStart(2, '0')}E${String(targetEpisode).padStart(2, '0')}`,
-                        `S${targetSeason}E${String(targetEpisode).padStart(2, '0')}`,
-                        `S${String(targetSeason).padStart(2, '0')}E${targetEpisode}`,
-                        `S${targetSeason}E${targetEpisode}`,
-                        `${String(targetSeason).padStart(2, '0')}X${String(targetEpisode).padStart(2, '0')}`,
-                        `${targetSeason}X${String(targetEpisode).padStart(2, '0')}`,
+                        `S${String(targetSeason).padStart(2, '0')}E${String(targetEpisode).padStart(2, '0')}`,  // S05E03
+                        `S${targetSeason}E${String(targetEpisode).padStart(2, '0')}`,  // S5E03
+                        `S${String(targetSeason).padStart(2, '0')}E${targetEpisode}`,  // S05E3
+                        `S${targetSeason}E${targetEpisode}`,  // S5E3
+                        `${String(targetSeason).padStart(2, '0')}X${String(targetEpisode).padStart(2, '0')}`,  // 05x03
+                        `${targetSeason}X${String(targetEpisode).padStart(2, '0')}`,  // 5x03
                     ];
                     
+                    // Pokud název obsahuje přesný pattern, akceptujeme
+                    const hasExactPattern = exactPatterns.some(p => nameUpper.includes(p));
+                    if (hasExactPattern) {
+                        // 2) Kontrola názvu anime
+                        const hasAnimeTitle = searchKeywords.some(keyword => {
+                            if (keyword.length < 4) return true;
+                            const words = keyword.split(/\s+/).filter(w => w.length > 3);
+                            if (words.length === 0) return true;
+                            const matchedWords = words.filter(word => nameLower.includes(word)).length;
+                            const minWords = Math.max(2, Math.ceil(words.length * 0.3));
+                            return matchedWords >= minWords;
+                        });
+                        return hasAnimeTitle;
+                    }
+                    
+                    // 3) Episode-only patterny (E03, EP03, -03-) - POUZE pokud název NEOBSAHUJE jinou sezónu
                     const episodeOnlyPatterns = [
                         new RegExp(`E${String(targetEpisode).padStart(2, '0')}[^0-9]`, 'i'),
                         new RegExp(`E${String(targetEpisode).padStart(2, '0')}$`, 'i'),
-                        new RegExp(`EP${String(targetEpisode).padStart(2, '0')}[^0-9]`, 'i'),
-                        new RegExp(`EP${String(targetEpisode).padStart(2, '0')}$`, 'i'),
-                        // Formát jen čísla: "-02-", "-02.", " 02 ", " 02.", "_02_", atd.
                         new RegExp(`[\\s\\-_\\.]${String(targetEpisode).padStart(2, '0')}[\\s\\-_\\.]`, 'i'),
-                        new RegExp(`[\\s\\-_\\.]${String(targetEpisode).padStart(2, '0')}$`, 'i'),
                     ];
                     
-                    const hasEpisodeNumber = exactPatterns.some(p => nameUpper.includes(p)) ||
-                                           episodeOnlyPatterns.some(p => p.test(nameUpper));
-                    
-                    if (!hasEpisodeNumber) return false;
-                    
-                    // 2) Musí obsahovat část názvu anime
-                    const hasAnimeTitle = searchKeywords.some(keyword => {
-                        if (keyword.length < 4) return true;
+                    const hasEpisodePattern = episodeOnlyPatterns.some(p => p.test(nameUpper));
+                    if (hasEpisodePattern) {
+                        // Ujistíme se, že v názvu NENÍ jiné číslo sezóny
+                        const hasWrongSeason = /S(\d+)E/i.test(nameUpper) && !exactPatterns.some(p => nameUpper.includes(p));
+                        if (hasWrongSeason) return false;  // Má špatnou sezónu, odmítneme
                         
-                        // Rozdělíme na slova delší než 3 znaky
-                        const words = keyword.split(/\s+/).filter(w => w.length > 3);
-                        if (words.length === 0) return true;
-                        
-                        // Spočítáme kolik slov se shoduje
-                        const matchedWords = words.filter(word => nameLower.includes(word)).length;
-                        
-                        // Musí obsahovat alespoň 30% slov (nebo min 2 slova)
-                        const minWords = Math.max(2, Math.ceil(words.length * 0.3));
-                        return matchedWords >= minWords;
-                    });
+                        // Kontrola názvu anime
+                        const hasAnimeTitle = searchKeywords.some(keyword => {
+                            if (keyword.length < 4) return true;
+                            const words = keyword.split(/\s+/).filter(w => w.length > 3);
+                            if (words.length === 0) return true;
+                            const matchedWords = words.filter(word => nameLower.includes(word)).length;
+                            const minWords = Math.max(2, Math.ceil(words.length * 0.3));
+                            return matchedWords >= minWords;
+                        });
+                        return hasAnimeTitle;
+                    }
                     
-                    return hasAnimeTitle;
+                    return false;
                 });
                 
                 console.log(`Filtered to ${filteredResults.length} results matching episode`);
