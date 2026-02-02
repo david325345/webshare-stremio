@@ -815,7 +815,6 @@ console.log('✅ Keep-alive scheduler initialized');
 
 // ========== STATIC FILES SERVER ==========
 // Servírování statických souborů (logo)
-const express = require('express');
 const landingHTML = `<h1>Webshare Stremio Addon</h1>`;
 
 serveHTTP(builder.getInterface(), {
