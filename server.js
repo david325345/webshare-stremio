@@ -6,7 +6,7 @@ const xml2js = require('xml2js');
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '1.4.0',
+    version: '1.5.0',
     name: 'Webshare Anime',
     description: 'Anime z Webshare.cz',
     resources: ['stream'],
@@ -654,34 +654,70 @@ builder.defineStreamHandler(async (args) => {
                 if (link) {
                     const quality = detectQuality(file.name);
                     
-                    // Sestavíme název s metadaty
+                    // Sestavíme metadata
                     const sizeStr = formatSize(file.size);
                     const qualityStr = quality.resolution || 'SD';
                     
-                    // Detekce jazyka z názvu
+                    // Detekce jazyka/titulků z názvu
                     const nameUpper = file.name.toUpperCase();
-                    let language = '';
-                    if (nameUpper.includes('CZ') || nameUpper.includes('CZECH')) {
-                        language = '🇨🇿';
-                    } else if (nameUpper.includes('SK') || nameUpper.includes('SLOVAK')) {
-                        language = '🇸🇰';
+                    const languages = [];
+                    if (nameUpper.includes('CZ') || nameUpper.includes('CZECH')) languages.push('🇨🇿 CZ');
+                    if (nameUpper.includes('SK') || nameUpper.includes('SLOVAK')) languages.push('🇸🇰 SK');
+                    if (nameUpper.includes('EN') || nameUpper.includes('ENGLISH')) languages.push('🇬🇧 EN');
+                    if (nameUpper.includes('MULTI') || nameUpper.includes('DUAL')) languages.push('🌍 MULTI');
+                    
+                    // Detekce typu zvuku
+                    const audioTypes = [];
+                    if (nameUpper.includes('DABING') || nameUpper.includes('DUBBED')) audioTypes.push('DABING');
+                    if (nameUpper.includes('TITULKY') || nameUpper.includes('SUBS') || nameUpper.includes('SUB')) audioTypes.push('TITULKY');
+                    
+                    // Sestavíme název streamu s co nejvíce informací
+                    let streamName = 'Webshare';
+                    
+                    // Jazyk a audio typ
+                    if (languages.length > 0) {
+                        streamName += ` ${languages.join('+')}`;
+                        if (audioTypes.length > 0) streamName += ` ${audioTypes[0]}`;
                     }
                     
-                    // Sestavíme čistý název streamu
-                    let streamName = `Webshare ${qualityStr}`;
-                    if (language) streamName = `${language} ${streamName}`;
-                    if (quality.codec) streamName += ` ${quality.codec}`;
+                    // Rozlišení
+                    streamName += ` 📺${qualityStr}`;
+                    
+                    // Codec
+                    if (quality.codec) streamName += ` 🎬${quality.codec}`;
+                    
+                    // Audio formát
+                    if (quality.audio) streamName += ` 🔊${quality.audio}`;
+                    
+                    // Source
+                    if (quality.source) streamName += ` 📀${quality.source}`;
+                    
+                    // Velikost
+                    streamName += ` 💾${sizeStr}`;
+                    
+                    // Rating
+                    if (file.positive_votes > 0 || file.negative_votes > 0) {
+                        const ratio = file.positive_votes / (file.positive_votes + file.negative_votes + 1);
+                        if (ratio > 0.7) streamName += ` ⭐`;
+                    }
                     
                     return {
                         name: streamName,
-                        title: `${file.name} (${sizeStr})`,
+                        title: file.name,
                         url: link,
                         behaviorHints: {
                             bingeGroup: 'webshare-anime',
                             videoSize: file.size,
                             filename: file.name,
-                            videoHash: file.ident
-                        }
+                            videoHash: file.ident,
+                            // Přidáme všechna detekovaná metadata
+                            notWebReady: false
+                        },
+                        // Přidáme i alternativní metadata pole (některé klienty je používají)
+                        subtitles: audioTypes.includes('TITULKY') ? [{
+                            lang: languages[0]?.split(' ')[1] || 'cz',
+                            url: ''
+                        }] : undefined
                     };
                 }
                 return null;
