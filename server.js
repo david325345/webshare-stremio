@@ -6,7 +6,7 @@ const xml2js = require('xml2js');
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '1.8.2',
+    version: '1.8.3',
     name: 'Webshare Anime',
     description: 'Anime z Webshare.cz',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -333,12 +333,17 @@ async function getTMDBNames(imdbId, type) {
         
         // Nejdřív zkusíme česky
         const urlCZ = `https://api.themoviedb.org/3/find/${imdbId}?api_key=84da28b04b49814a9cbe5e6b5c18aed7&external_source=imdb_id&language=cs-CZ`;
+        console.log('TMDB URL CZ:', urlCZ);
         const respCZ = await needle('get', urlCZ);
+        console.log('TMDB CZ status:', respCZ.statusCode);
         
         if (respCZ.body) {
+            console.log('TMDB CZ body keys:', Object.keys(respCZ.body));
             const results = respCZ.body.movie_results || respCZ.body.tv_results || [];
+            console.log('TMDB CZ results count:', results.length);
             if (results.length > 0) {
                 const media = results[0];
+                console.log('TMDB CZ media:', JSON.stringify(media, null, 2));
                 if (media.name) names.push(media.name); // TV show
                 if (media.title) names.push(media.title); // Movie
             }
@@ -346,12 +351,17 @@ async function getTMDBNames(imdbId, type) {
         
         // Pak anglicky
         const urlEN = `https://api.themoviedb.org/3/find/${imdbId}?api_key=84da28b04b49814a9cbe5e6b5c18aed7&external_source=imdb_id&language=en-US`;
+        console.log('TMDB URL EN:', urlEN);
         const respEN = await needle('get', urlEN);
+        console.log('TMDB EN status:', respEN.statusCode);
         
         if (respEN.body) {
+            console.log('TMDB EN body keys:', Object.keys(respEN.body));
             const results = respEN.body.movie_results || respEN.body.tv_results || [];
+            console.log('TMDB EN results count:', results.length);
             if (results.length > 0) {
                 const media = results[0];
+                console.log('TMDB EN media:', JSON.stringify(media, null, 2));
                 if (media.name) names.push(media.name); // TV show
                 if (media.title) names.push(media.title); // Movie
                 if (media.original_name && media.original_name !== media.name) names.push(media.original_name);
@@ -365,6 +375,7 @@ async function getTMDBNames(imdbId, type) {
         return uniqueNames;
     } catch (error) {
         console.error('Error getting TMDB names:', error.message);
+        console.error('Error stack:', error.stack);
     }
     return [];
 }
