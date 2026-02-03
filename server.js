@@ -352,8 +352,12 @@ async function getTMDBNames(imdbId, type, apiKey) {
         const urlCZ = `https://api.themoviedb.org/3/find/${imdbId}?api_key=${apiKey}&external_source=imdb_id&language=cs-CZ`;
         const respCZ = await needle('get', urlCZ);
         
+        console.log('TMDB CZ status:', respCZ.statusCode);
+        console.log('TMDB CZ body:', JSON.stringify(respCZ.body, null, 2));
+        
         if (respCZ.statusCode === 200 && respCZ.body) {
             const results = respCZ.body.movie_results || respCZ.body.tv_results || [];
+            console.log('TMDB CZ results count:', results.length);
             if (results.length > 0) {
                 const media = results[0];
                 if (media.name) names.push(media.name); // TV show
