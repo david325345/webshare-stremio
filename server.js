@@ -6,7 +6,7 @@ const xml2js = require('xml2js');
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '1.7.0',
+    version: '1.7.2',
     name: 'Webshare Anime',
     description: 'Anime z Webshare.cz',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -177,10 +177,19 @@ async function getAnimeNamesFromTitle(title) {
         
         console.log('Cleaned search name:', cleanName);
         
+        // Pro názvy s dvojtečkou zkusíme i část před dvojtečkou
+        const namesToTry = [title, cleanName];
+        if (cleanName.includes(':')) {
+            const beforeColon = cleanName.split(':')[0].trim();
+            if (beforeColon.length > 3) {
+                namesToTry.push(beforeColon);
+            }
+        }
+        
         // Hledáme na AniList
         const searchQuery = `
         query ($search: String) {
-            Media(search: $search, type: ANIME) {
+            Media(search: $search, type: ANIME, format: TV) {
                 title {
                     romaji
                     english
@@ -190,8 +199,8 @@ async function getAnimeNamesFromTitle(title) {
             }
         }`;
         
-        // Zkusíme oba názvy
-        for (const name of [title, cleanName]) {
+        // Zkusíme všechny varianty názvu
+        for (const name of namesToTry) {
             console.log('Searching AniList with:', name);
             
             const searchResp = await needle('post', 'https://graphql.anilist.co', {
@@ -425,8 +434,8 @@ builder.defineStreamHandler(async (args) => {
                 
                 console.log(`Similarity check: ${similarity.toFixed(2)} (${matchingWords}/${cinemataWords.length} words match)`);
                 
-                // Pokud se názvy shodují aspoň z 50%, je to pravděpodobně správné anime
-                if (similarity >= 0.5) {
+                // Pokud se názvy shodují aspoň z 30%, je to pravděpodobně správné anime
+                if (similarity >= 0.3) {
                     // Je to anime! Filtrujeme latinské názvy
                     console.log('Found anime on AniList with names:', names);
                     
