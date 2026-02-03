@@ -6,7 +6,7 @@ const xml2js = require('xml2js');
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '1.9.0',
+    version: '1.9.1',
     name: 'Webshare Anime',
     description: 'Anime z Webshare.cz',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -356,7 +356,11 @@ async function getTMDBNames(imdbId, type, apiKey) {
         console.log('TMDB CZ body:', JSON.stringify(respCZ.body, null, 2));
         
         if (respCZ.statusCode === 200 && respCZ.body) {
-            const results = respCZ.body.movie_results || respCZ.body.tv_results || [];
+            // Zkontrolujeme TV i filmy
+            const tvResults = respCZ.body.tv_results || [];
+            const movieResults = respCZ.body.movie_results || [];
+            const results = [...tvResults, ...movieResults];
+            
             console.log('TMDB CZ results count:', results.length);
             if (results.length > 0) {
                 const media = results[0];
@@ -373,7 +377,11 @@ async function getTMDBNames(imdbId, type, apiKey) {
         const respEN = await needle('get', urlEN);
         
         if (respEN.statusCode === 200 && respEN.body) {
-            const results = respEN.body.movie_results || respEN.body.tv_results || [];
+            // Zkontrolujeme TV i filmy
+            const tvResults = respEN.body.tv_results || [];
+            const movieResults = respEN.body.movie_results || [];
+            const results = [...tvResults, ...movieResults];
+            
             if (results.length > 0) {
                 const media = results[0];
                 if (media.name) names.push(media.name); // TV show
