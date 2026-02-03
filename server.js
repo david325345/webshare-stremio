@@ -6,7 +6,7 @@ const xml2js = require('xml2js');
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '1.6.3',
+    version: '1.6.4',
     name: 'Webshare Anime',
     description: 'Anime z Webshare.cz',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -788,40 +788,23 @@ builder.defineStreamHandler(async (args) => {
 // ========== KEEP-ALIVE CRON JOB ==========
 const cron = require('node-cron');
 
-let serverWokenUp = false;
-let wakeUpDate = null;
-
-// Detekce prvního requestu po probuzení
-const originalDefineResourceHandler = builder.defineResourceHandler.bind(builder);
-builder.defineResourceHandler = function(...args) {
-    const result = originalDefineResourceHandler(...args);
-    if (!serverWokenUp) {
-        serverWokenUp = true;
-        wakeUpDate = new Date().toDateString(); // Uložíme datum probuzení
-        console.log(`🚀 Server woken up on ${wakeUpDate} - pings will run until midnight`);
-    }
-    return result;
-};
+// Server se probouzí hned při startu
+const wakeUpDate = new Date().toDateString();
+console.log(`🚀 Server started on ${wakeUpDate} - pings will run until midnight`);
 
 // Ping každých 10 minut (jen do půlnoci dne probuzení)
 cron.schedule('*/10 * * * *', async () => {
     const now = new Date();
     const currentDate = now.toDateString();
-    const hour = now.getHours();
     
     // Pokud je půlnoc nebo další den, přestaneme pingovat
-    if (serverWokenUp && wakeUpDate && currentDate !== wakeUpDate) {
-        console.log('🌙 Midnight passed - stopping pings for today');
-        serverWokenUp = false;
-        wakeUpDate = null;
+    if (currentDate !== wakeUpDate) {
+        console.log('🌙 Midnight passed - server will sleep');
         return;
     }
     
-    // Pinguj jen pokud byl server probuzen a je stejný den
-    if (!serverWokenUp || !wakeUpDate) return;
-    
     try {
-        const url = process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000';
+        const url = process.env.RENDER_EXTERNAL_URL || 'http://localhost:10000';
         console.log(`⏰ Keep-alive ping: ${now.toLocaleTimeString()}`);
         await needle('get', `${url}/manifest.json`, { timeout: 5000 });
     } catch (error) {
