@@ -6,7 +6,7 @@ const xml2js = require('xml2js');
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '1.7.0',
+    version: '1.6.7',
     name: 'Webshare Anime',
     description: 'Anime z Webshare.cz',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -383,17 +383,12 @@ builder.defineStreamHandler(async (args) => {
             // Vyčistíme speciální znaky z názvu
             const cleanName = mainName.replace(/[!?:\*]/g, '');
             
-            // Odstraníme krátká obecná slova (the, a, an, of, in, at, to)
-            const finalName = cleanName.split(/\s+/)
-                .filter(word => word.length > 3 || !['the', 'a', 'an', 'of', 'in', 'at', 'to'].includes(word.toLowerCase()))
-                .join(' ');
-            
             if (args.type === 'series' && episode) {
                 const seasonEp = `S${String(season).padStart(2, '0')}E${String(episode).padStart(2, '0')}`;
-                searchQueries.push(`${finalName} ${seasonEp}`);
+                searchQueries.push(`${cleanName} ${seasonEp}`);
             } else {
                 // Žádné číslo epizody - hledáme jen název
-                searchQueries.push(finalName);
+                searchQueries.push(cleanName);
             }
         } else if (args.id.startsWith('tt')) {
             const parts = args.id.split(':');
@@ -472,34 +467,23 @@ builder.defineStreamHandler(async (args) => {
                     const seasonEp = `S${String(season).padStart(2, '0')}E${String(episode).padStart(2, '0')}`;
                     // Použijeme jen první 3 názvy (romaji + english + hlavní synonym)
                     for (const name of names.slice(0, 3)) {
-                        // Vyčistíme speciální znaky a krátká slova
+                        // Vyčistíme speciální znaky
                         const cleanName = name.replace(/[!?:\*]/g, '');
-                        const finalName = cleanName.split(/\s+/)
-                            .filter(word => word.length > 3 || !['the', 'a', 'an', 'of', 'in', 'at', 'to'].includes(word.toLowerCase()))
-                            .join(' ');
-                        searchQueries.push(`${finalName} ${seasonEp}`);
+                        searchQueries.push(`${cleanName} ${seasonEp}`);
                     }
                 } else {
                     // Jen první 3 názvy
-                    searchQueries = names.slice(0, 3).map(n => {
-                        const cleanName = n.replace(/[!?:\*]/g, '');
-                        return cleanName.split(/\s+/)
-                            .filter(word => word.length > 3 || !['the', 'a', 'an', 'of', 'in', 'at', 'to'].includes(word.toLowerCase()))
-                            .join(' ');
-                    });
+                    searchQueries = names.slice(0, 3).map(n => n.replace(/[!?:\*]/g, ''));
                 }
             } else {
                 // Jen jeden název (z Cinemeta) - použijeme jen ten
                 const mainName = names[0];
                 const cleanName = mainName.replace(/[!?:\*]/g, '');
-                const finalName = cleanName.split(/\s+/)
-                    .filter(word => word.length > 3 || !['the', 'a', 'an', 'of', 'in', 'at', 'to'].includes(word.toLowerCase()))
-                    .join(' ');
                 if (args.type === 'series' && season && episode) {
                     const seasonEp = `S${String(season).padStart(2, '0')}E${String(episode).padStart(2, '0')}`;
-                    searchQueries.push(`${finalName} ${seasonEp}`);
+                    searchQueries.push(`${cleanName} ${seasonEp}`);
                 } else {
-                    searchQueries.push(finalName);
+                    searchQueries.push(cleanName);
                 }
             }
         } else {
