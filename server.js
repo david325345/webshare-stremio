@@ -6,7 +6,7 @@ const xml2js = require('xml2js');
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '1.6.2',
+    version: '1.6.3',
     name: 'Webshare Anime',
     description: 'Anime z Webshare.cz',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -789,6 +789,7 @@ builder.defineStreamHandler(async (args) => {
 const cron = require('node-cron');
 
 let serverWokenUp = false;
+let wakeUpDate = null;
 
 // Detekce prvního requestu po probuzení
 const originalDefineResourceHandler = builder.defineResourceHandler.bind(builder);
@@ -796,27 +797,28 @@ builder.defineResourceHandler = function(...args) {
     const result = originalDefineResourceHandler(...args);
     if (!serverWokenUp) {
         serverWokenUp = true;
-        console.log('🚀 Server woken up - starting keep-alive pings until midnight');
+        wakeUpDate = new Date().toDateString(); // Uložíme datum probuzení
+        console.log(`🚀 Server woken up on ${wakeUpDate} - pings will run until midnight`);
     }
     return result;
 };
 
-// Ping každých 10 minut (pokud byl server probuzen a není po půlnoci)
+// Ping každých 10 minut (jen do půlnoci dne probuzení)
 cron.schedule('*/10 * * * *', async () => {
     const now = new Date();
+    const currentDate = now.toDateString();
     const hour = now.getHours();
     
-    // Reset po půlnoci (00:00 - 05:59)
-    if (hour >= 0 && hour < 6) {
-        if (serverWokenUp) {
-            console.log('🌙 Midnight passed - stopping pings, resetting wake flag');
-            serverWokenUp = false;
-        }
+    // Pokud je půlnoc nebo další den, přestaneme pingovat
+    if (serverWokenUp && wakeUpDate && currentDate !== wakeUpDate) {
+        console.log('🌙 Midnight passed - stopping pings for today');
+        serverWokenUp = false;
+        wakeUpDate = null;
         return;
     }
     
-    // Pinguj jen pokud byl server již probuzen
-    if (!serverWokenUp) return;
+    // Pinguj jen pokud byl server probuzen a je stejný den
+    if (!serverWokenUp || !wakeUpDate) return;
     
     try {
         const url = process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000';
