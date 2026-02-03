@@ -6,7 +6,7 @@ const xml2js = require('xml2js');
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '1.9.3',
+    version: '1.9.4',
     name: 'Webshare Anime',
     description: 'Anime z Webshare.cz',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -554,7 +554,7 @@ builder.defineStreamHandler(async (args) => {
             } else {
                 // Není to anime na AniList, zkusíme TMDB pro běžné seriály/filmy
                 console.log('Not found on AniList, trying TMDB for non-anime');
-                const tmdbNames = await getTMDBNames(args.id.split(':')[0], args.type);
+                const tmdbNames = await getTMDBNames(args.id.split(':')[0], args.type, args.config.tmdb_api_key);
                 if (tmdbNames.length > 0) {
                     console.log('Using TMDB names (including Czech)');
                     names = tmdbNames;
