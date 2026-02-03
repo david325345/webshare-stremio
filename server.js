@@ -6,7 +6,7 @@ const xml2js = require('xml2js');
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '2.0.1',
+    version: '2.1.0',
     name: 'Webshare Anime',
     description: 'Anime z Webshare.cz',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -207,6 +207,9 @@ async function getAnimeNamesFromTitle(title) {
                     native
                 }
                 synonyms
+                startDate {
+                    year
+                }
             }
         }`;
         
@@ -233,8 +236,14 @@ async function getAnimeNamesFromTitle(title) {
                 if (media.synonyms) names.push(...media.synonyms);
                 
                 console.log('Found on AniList:', names);
+                console.log('AniList year:', media.startDate?.year || 'unknown');
                 console.log('=== getAnimeNamesFromTitle SUCCESS ===');
-                return [...new Set(names)];
+                
+                // Vrátíme názvy + rok
+                return {
+                    names: [...new Set(names)],
+                    year: media.startDate?.year || null
+                };
             }
         }
         
@@ -245,7 +254,7 @@ async function getAnimeNamesFromTitle(title) {
         console.error('Error:', error.message);
     }
     
-    return [];
+    return { names: [], year: null };
 }
 async function getAnimeNames(imdbId) {
     const query = `
@@ -496,7 +505,22 @@ builder.defineStreamHandler(async (args) => {
             console.log('Got name from Cinemeta:', cinemataName);
             
             // Zkusíme najít anime na AniList podle názvu
-            let names = await getAnimeNamesFromTitle(cinemataName);
+            const anilistResult = await getAnimeNamesFromTitle(cinemataName);
+            let names = anilistResult.names;
+            const anilistYear = anilistResult.year;
+            
+            // Získáme rok z Cinemeta/TMDB pro porovnání
+            let cinemataYear = null;
+            try {
+                const baseId = args.id.split(':')[0];
+                const cinemataResp = await needle('get', `https://v3-cinemeta.strem.io/meta/${args.type}/${baseId}.json`);
+                if (cinemataResp.body?.meta?.released) {
+                    cinemataYear = new Date(cinemataResp.body.meta.released).getFullYear();
+                    console.log('Cinemeta year:', cinemataYear);
+                }
+            } catch (e) {
+                console.log('Could not get year from Cinemeta');
+            }
             
             if (names.length > 0) {
                 // Zkontrolujeme, jestli je to opravdu stejné anime
@@ -520,8 +544,19 @@ builder.defineStreamHandler(async (args) => {
                 
                 console.log(`Similarity check: ${bestSimilarity.toFixed(2)} (best match: "${bestMatchName}")`);
                 
-                // Pokud se názvy shodují aspoň z 30%, je to pravděpodobně správné anime
-                if (bestSimilarity >= 0.3) {
+                // Kontrola roku - pokud se roky liší o víc než 2 roky, pravděpodobně to není stejné anime
+                let yearMatch = true;
+                if (anilistYear && cinemataYear) {
+                    const yearDiff = Math.abs(anilistYear - cinemataYear);
+                    console.log(`Year difference: ${yearDiff} years (AniList: ${anilistYear}, Cinemeta: ${cinemataYear})`);
+                    if (yearDiff > 2) {
+                        console.log('Year difference too large - probably not the same anime');
+                        yearMatch = false;
+                    }
+                }
+                
+                // Pokud se názvy shodují aspoň z 30% A roky sedí, je to pravděpodobně správné anime
+                if (bestSimilarity >= 0.3 && yearMatch) {
                     // Je to anime! Použijeme AniList názvy (NE TMDB)
                     console.log('Found anime on AniList - using AniList names only');
                     
