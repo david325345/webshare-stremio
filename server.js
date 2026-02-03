@@ -6,7 +6,7 @@ const xml2js = require('xml2js');
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '1.8.3',
+    version: '1.9.0',
     name: 'Webshare Anime',
     description: 'Anime z Webshare.cz',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -14,6 +14,10 @@ const manifest = {
     types: ['series', 'movie'],
     catalogs: [],
     idPrefixes: ['tt', 'kitsu'],
+    behaviorHints: {
+        configurable: true,
+        configurationRequired: false
+    },
     config: [
         {
             key: 'username',
@@ -26,6 +30,13 @@ const manifest = {
             type: 'password',
             title: 'Webshare password',
             required: true
+        },
+        {
+            key: 'tmdb_api_key',
+            type: 'text',
+            title: 'TMDB API Key (optional - for Czech names)',
+            required: false,
+            default: ''
         }
     ]
 };
@@ -325,43 +336,42 @@ async function getCinemetaName(type, id) {
 }
 
 // Získání názvů z TMDB (české + anglické)
-async function getTMDBNames(imdbId, type) {
+async function getTMDBNames(imdbId, type, apiKey) {
+    // Pokud není API klíč, vrátíme prázdné pole
+    if (!apiKey || apiKey.trim() === '') {
+        console.log('TMDB API key not provided, skipping TMDB');
+        return [];
+    }
+    
     try {
         console.log('Getting names from TMDB for', imdbId);
         
         const names = [];
         
         // Nejdřív zkusíme česky
-        const urlCZ = `https://api.themoviedb.org/3/find/${imdbId}?api_key=84da28b04b49814a9cbe5e6b5c18aed7&external_source=imdb_id&language=cs-CZ`;
-        console.log('TMDB URL CZ:', urlCZ);
+        const urlCZ = `https://api.themoviedb.org/3/find/${imdbId}?api_key=${apiKey}&external_source=imdb_id&language=cs-CZ`;
         const respCZ = await needle('get', urlCZ);
-        console.log('TMDB CZ status:', respCZ.statusCode);
         
-        if (respCZ.body) {
-            console.log('TMDB CZ body keys:', Object.keys(respCZ.body));
+        if (respCZ.statusCode === 200 && respCZ.body) {
             const results = respCZ.body.movie_results || respCZ.body.tv_results || [];
-            console.log('TMDB CZ results count:', results.length);
             if (results.length > 0) {
                 const media = results[0];
-                console.log('TMDB CZ media:', JSON.stringify(media, null, 2));
                 if (media.name) names.push(media.name); // TV show
                 if (media.title) names.push(media.title); // Movie
             }
+        } else if (respCZ.statusCode === 401) {
+            console.log('TMDB API key is invalid (401 Unauthorized)');
+            return [];
         }
         
         // Pak anglicky
-        const urlEN = `https://api.themoviedb.org/3/find/${imdbId}?api_key=84da28b04b49814a9cbe5e6b5c18aed7&external_source=imdb_id&language=en-US`;
-        console.log('TMDB URL EN:', urlEN);
+        const urlEN = `https://api.themoviedb.org/3/find/${imdbId}?api_key=${apiKey}&external_source=imdb_id&language=en-US`;
         const respEN = await needle('get', urlEN);
-        console.log('TMDB EN status:', respEN.statusCode);
         
-        if (respEN.body) {
-            console.log('TMDB EN body keys:', Object.keys(respEN.body));
+        if (respEN.statusCode === 200 && respEN.body) {
             const results = respEN.body.movie_results || respEN.body.tv_results || [];
-            console.log('TMDB EN results count:', results.length);
             if (results.length > 0) {
                 const media = results[0];
-                console.log('TMDB EN media:', JSON.stringify(media, null, 2));
                 if (media.name) names.push(media.name); // TV show
                 if (media.title) names.push(media.title); // Movie
                 if (media.original_name && media.original_name !== media.name) names.push(media.original_name);
@@ -375,7 +385,6 @@ async function getTMDBNames(imdbId, type) {
         return uniqueNames;
     } catch (error) {
         console.error('Error getting TMDB names:', error.message);
-        console.error('Error stack:', error.stack);
     }
     return [];
 }
@@ -510,7 +519,7 @@ builder.defineStreamHandler(async (args) => {
                 } else {
                     // Názvy se příliš neshodují - není to anime, zkusíme TMDB
                     console.log('AniList result too different from Cinemeta - trying TMDB for non-anime');
-                    const tmdbNames = await getTMDBNames(args.id.split(':')[0], args.type);
+                    const tmdbNames = await getTMDBNames(args.id.split(':')[0], args.type, args.config.tmdb_api_key);
                     if (tmdbNames.length > 0) {
                         console.log('Using TMDB names (including Czech)');
                         names = tmdbNames;
