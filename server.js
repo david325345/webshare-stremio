@@ -6,7 +6,7 @@ const xml2js = require('xml2js');
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '1.6.4',
+    version: '1.6.6',
     name: 'Webshare Anime',
     description: 'Anime z Webshare.cz',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -425,8 +425,8 @@ builder.defineStreamHandler(async (args) => {
                 
                 console.log(`Similarity check: ${similarity.toFixed(2)} (${matchingWords}/${cinemataWords.length} words match)`);
                 
-                // Pokud se názvy shodují aspoň z 30%, je to pravděpodobně správné anime
-                if (similarity >= 0.3) {
+                // Pokud se názvy shodují aspoň z 50%, je to pravděpodobně správné anime
+                if (similarity >= 0.5) {
                     // Je to anime! Filtrujeme latinské názvy
                     console.log('Found anime on AniList with names:', names);
                     
@@ -602,22 +602,38 @@ builder.defineStreamHandler(async (args) => {
                 
                 console.log(`Filtered to ${filteredResults.length} results matching episode`);
                 
-                // Pokud nic nenajdeme, zkusíme méně přísný filtr (jen číslo epizody bez názvu)
+                // Pokud nic nenajdeme s názvem, zkusíme jen sezon+epizodu bez kontroly názvu
                 if (filteredResults.length === 0) {
-                    console.log('No matches with title filter, trying episode number only');
+                    console.log('No matches with title filter, trying season+episode only');
                     filteredResults = results.filter(result => {
                         const nameUpper = result.name.toUpperCase();
+                        
+                        // Přesné patterny se sezónou
                         const exactPatterns = [
                             `S${String(targetSeason).padStart(2, '0')}E${String(targetEpisode).padStart(2, '0')}`,
                             `S${targetSeason}E${String(targetEpisode).padStart(2, '0')}`,
+                            `S${String(targetSeason).padStart(2, '0')}E${targetEpisode}`,
+                            `S${targetSeason}E${targetEpisode}`,
                         ];
+                        
+                        const hasExactPattern = exactPatterns.some(p => nameUpper.includes(p));
+                        if (hasExactPattern) return true;
+                        
+                        // Episode-only patterns - POUZE pokud NEMÁ jinou sezónu
                         const episodeOnlyPatterns = [
                             new RegExp(`E${String(targetEpisode).padStart(2, '0')}[^0-9]`, 'i'),
                             new RegExp(`E${String(targetEpisode).padStart(2, '0')}$`, 'i'),
                             new RegExp(`[\\s\\-_\\.\\[\\(]${String(targetEpisode).padStart(2, '0')}[\\s\\-_\\.\\]\\)]`, 'i'),
                         ];
-                        return exactPatterns.some(p => nameUpper.includes(p)) ||
-                               episodeOnlyPatterns.some(p => p.test(nameUpper));
+                        
+                        const hasEpisodePattern = episodeOnlyPatterns.some(p => p.test(nameUpper));
+                        if (hasEpisodePattern) {
+                            // Kontrola že NEMÁ špatnou sezónu
+                            const hasWrongSeason = /S(\d+)E/i.test(nameUpper) && !exactPatterns.some(p => nameUpper.includes(p));
+                            return !hasWrongSeason;
+                        }
+                        
+                        return false;
                     });
                     console.log(`Relaxed filter found ${filteredResults.length} results`);
                 }
