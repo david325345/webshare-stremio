@@ -6,7 +6,7 @@ const xml2js = require('xml2js');
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '1.7.2',
+    version: '1.8.0',
     name: 'Webshare Anime',
     description: 'Anime z Webshare.cz',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -324,6 +324,41 @@ async function getCinemetaName(type, id) {
     return [];
 }
 
+// Získání názvů z TMDB (včetně českého)
+async function getTMDBNames(imdbId, type) {
+    try {
+        console.log('Getting names from TMDB for', imdbId);
+        
+        // TMDB endpoint podle typu
+        const tmdbType = type === 'movie' ? 'movie' : 'tv';
+        const url = `https://api.themoviedb.org/3/find/${imdbId}?api_key=84da28b04b49814a9cbe5e6b5c18aed7&external_source=imdb_id&language=cs-CZ`;
+        
+        const resp = await needle('get', url);
+        
+        if (!resp.body) return [];
+        
+        const results = resp.body.movie_results || resp.body.tv_results || [];
+        if (results.length === 0) return [];
+        
+        const media = results[0];
+        const names = [];
+        
+        // Český název (nebo anglický pokud český neexistuje)
+        if (media.name) names.push(media.name); // TV show
+        if (media.title) names.push(media.title); // Movie
+        
+        // Original název
+        if (media.original_name && media.original_name !== media.name) names.push(media.original_name);
+        if (media.original_title && media.original_title !== media.title) names.push(media.original_title);
+        
+        console.log('TMDB names:', names);
+        return [...new Set(names)];
+    } catch (error) {
+        console.error('Error getting TMDB names:', error.message);
+    }
+    return [];
+}
+
 builder.defineStreamHandler(async (args) => {
     console.log('=== STREAM REQUEST ===');
     console.log('Full args:', JSON.stringify(args, null, 2));
@@ -452,14 +487,28 @@ builder.defineStreamHandler(async (args) => {
                         names = cinemataNames;
                     }
                 } else {
-                    // Názvy se příliš neshodují - pravděpodobně špatný match
-                    console.log('AniList result too different from Cinemeta - using Cinemeta name only');
-                    names = cinemataNames;
+                    // Názvy se příliš neshodují - není to anime, zkusíme TMDB
+                    console.log('AniList result too different from Cinemeta - trying TMDB for non-anime');
+                    const tmdbNames = await getTMDBNames(args.id.split(':')[0], args.type);
+                    if (tmdbNames.length > 0) {
+                        console.log('Using TMDB names (including Czech)');
+                        names = tmdbNames;
+                    } else {
+                        console.log('TMDB failed, using Cinemeta name only');
+                        names = cinemataNames;
+                    }
                 }
             } else {
-                // Není to anime na AniList, použijeme jen Cinemeta název
-                console.log('Not found on AniList, using Cinemeta name only');
-                names = cinemataNames;
+                // Není to anime na AniList, zkusíme TMDB pro běžné seriály/filmy
+                console.log('Not found on AniList, trying TMDB for non-anime');
+                const tmdbNames = await getTMDBNames(args.id.split(':')[0], args.type);
+                if (tmdbNames.length > 0) {
+                    console.log('Using TMDB names (including Czech)');
+                    names = tmdbNames;
+                } else {
+                    console.log('TMDB failed, using Cinemeta name only');
+                    names = cinemataNames;
+                }
             }
 
             console.log('Final names for search:', names);
