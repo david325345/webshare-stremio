@@ -6,7 +6,7 @@ const xml2js = require('xml2js');
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '1.6.6',
+    version: '1.6.7',
     name: 'Webshare Anime',
     description: 'Anime z Webshare.cz',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -602,11 +602,12 @@ builder.defineStreamHandler(async (args) => {
                 
                 console.log(`Filtered to ${filteredResults.length} results matching episode`);
                 
-                // Pokud nic nenajdeme s názvem, zkusíme jen sezon+epizodu bez kontroly názvu
+                // Pokud nic nenajdeme s názvem, zkusíme jen sezon+epizodu s kontrolou alespoň nejdelšího slova
                 if (filteredResults.length === 0) {
-                    console.log('No matches with title filter, trying season+episode only');
+                    console.log('No matches with title filter, trying season+episode with partial name match');
                     filteredResults = results.filter(result => {
                         const nameUpper = result.name.toUpperCase();
+                        const nameLower = result.name.toLowerCase();
                         
                         // Přesné patterny se sezónou
                         const exactPatterns = [
@@ -617,23 +618,34 @@ builder.defineStreamHandler(async (args) => {
                         ];
                         
                         const hasExactPattern = exactPatterns.some(p => nameUpper.includes(p));
-                        if (hasExactPattern) return true;
-                        
-                        // Episode-only patterns - POUZE pokud NEMÁ jinou sezónu
-                        const episodeOnlyPatterns = [
-                            new RegExp(`E${String(targetEpisode).padStart(2, '0')}[^0-9]`, 'i'),
-                            new RegExp(`E${String(targetEpisode).padStart(2, '0')}$`, 'i'),
-                            new RegExp(`[\\s\\-_\\.\\[\\(]${String(targetEpisode).padStart(2, '0')}[\\s\\-_\\.\\]\\)]`, 'i'),
-                        ];
-                        
-                        const hasEpisodePattern = episodeOnlyPatterns.some(p => p.test(nameUpper));
-                        if (hasEpisodePattern) {
+                        if (!hasExactPattern) {
+                            // Episode-only patterns - POUZE pokud NEMÁ jinou sezónu
+                            const episodeOnlyPatterns = [
+                                new RegExp(`E${String(targetEpisode).padStart(2, '0')}[^0-9]`, 'i'),
+                                new RegExp(`E${String(targetEpisode).padStart(2, '0')}$`, 'i'),
+                                new RegExp(`[\\s\\-_\\.\\[\\(]${String(targetEpisode).padStart(2, '0')}[\\s\\-_\\.\\]\\)]`, 'i'),
+                            ];
+                            
+                            const hasEpisodePattern = episodeOnlyPatterns.some(p => p.test(nameUpper));
+                            if (!hasEpisodePattern) return false;
+                            
                             // Kontrola že NEMÁ špatnou sezónu
                             const hasWrongSeason = /S(\d+)E/i.test(nameUpper) && !exactPatterns.some(p => nameUpper.includes(p));
-                            return !hasWrongSeason;
+                            if (hasWrongSeason) return false;
                         }
                         
-                        return false;
+                        // Kontrola názvu - musí obsahovat NEJDELŠÍ slovo z názvu (to je nejspecifičtější)
+                        const hasLongestWord = searchKeywords.some(keyword => {
+                            if (keyword.length < 4) return false;
+                            const words = keyword.split(/\s+/).filter(w => w.length >= 4);
+                            if (words.length === 0) return false;
+                            
+                            // Najdeme nejdelší slovo
+                            const longestWord = words.reduce((a, b) => a.length > b.length ? a : b);
+                            return nameLower.includes(longestWord);
+                        });
+                        
+                        return hasLongestWord;
                     });
                     console.log(`Relaxed filter found ${filteredResults.length} results`);
                 }
