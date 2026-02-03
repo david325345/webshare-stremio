@@ -6,7 +6,7 @@ const xml2js = require('xml2js');
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '1.9.1',
+    version: '1.9.3',
     name: 'Webshare Anime',
     description: 'Anime z Webshare.cz',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -500,23 +500,33 @@ builder.defineStreamHandler(async (args) => {
             
             if (names.length > 0) {
                 // Zkontrolujeme, jestli je to opravdu stejné anime
-                // Porovnáme první název z AniList s Cinemeta názvem
-                const anilistFirstName = names[0].toLowerCase();
+                // Najdeme nejlepší shodu ze všech AniList názvů
                 const cinemataNameLower = cinemataName.toLowerCase();
-                
-                // Spočítáme kolik slov se shoduje
                 const cinemataWords = cinemataNameLower.split(/\s+/).filter(w => w.length > 3);
-                const matchingWords = cinemataWords.filter(word => anilistFirstName.includes(word)).length;
-                const similarity = cinemataWords.length > 0 ? matchingWords / cinemataWords.length : 0;
                 
-                console.log(`Similarity check: ${similarity.toFixed(2)} (${matchingWords}/${cinemataWords.length} words match)`);
+                let bestSimilarity = 0;
+                let bestMatchName = names[0];
+                
+                for (const anilistName of names) {
+                    const anilistLower = anilistName.toLowerCase();
+                    const matchingWords = cinemataWords.filter(word => anilistLower.includes(word)).length;
+                    const similarity = cinemataWords.length > 0 ? matchingWords / cinemataWords.length : 0;
+                    
+                    if (similarity > bestSimilarity) {
+                        bestSimilarity = similarity;
+                        bestMatchName = anilistName;
+                    }
+                }
+                
+                console.log(`Similarity check: ${bestSimilarity.toFixed(2)} (best match: "${bestMatchName}")`);
                 
                 // Pokud se názvy shodují aspoň z 30%, je to pravděpodobně správné anime
-                if (similarity >= 0.3) {
-                    // Je to anime! Filtrujeme latinské názvy
-                    console.log('Found anime on AniList with names:', names);
+                if (bestSimilarity >= 0.3) {
+                    // Je to anime! Použijeme AniList názvy (NE TMDB)
+                    console.log('Found anime on AniList - using AniList names only');
                     
                     const latinNames = names.filter(name => {
+                        // Pouze latinské znaky (žádná čínština, japonština, korejština)
                         return /^[\x00-\x7F\u00C0-\u024F\u1E00-\u1EFF]+$/.test(name);
                     });
                     
@@ -526,6 +536,7 @@ builder.defineStreamHandler(async (args) => {
                         names = latinNames;
                     } else {
                         // Žádné latinské názvy, použijeme Cinemeta
+                        console.log('No latin names found, using Cinemeta');
                         names = cinemataNames;
                     }
                 } else {
