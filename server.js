@@ -6,7 +6,7 @@ const xml2js = require('xml2js');
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '1.6.7',
+    version: '1.7.0',
     name: 'Webshare Anime',
     description: 'Anime z Webshare.cz',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -559,7 +559,7 @@ builder.defineStreamHandler(async (args) => {
                             const words = keyword.split(/\s+/).filter(w => w.length > 3);
                             if (words.length === 0) return true;
                             const matchedWords = words.filter(word => nameLower.includes(word)).length;
-                            const minWords = Math.max(2, Math.ceil(words.length * 0.3));
+                            const minWords = Math.max(1, Math.ceil(words.length * 0.2));
                             return matchedWords >= minWords;
                         });
                         return hasAnimeTitle;
@@ -591,7 +591,7 @@ builder.defineStreamHandler(async (args) => {
                             const words = keyword.split(/\s+/).filter(w => w.length > 3);
                             if (words.length === 0) return true;
                             const matchedWords = words.filter(word => nameLower.includes(word)).length;
-                            const minWords = Math.max(2, Math.ceil(words.length * 0.3));
+                            const minWords = Math.max(1, Math.ceil(words.length * 0.2));
                             return matchedWords >= minWords;
                         });
                         return hasAnimeTitle;
@@ -708,7 +708,7 @@ builder.defineStreamHandler(async (args) => {
         // Vytvoříme streamy pro každý výsledek
         // Pokud nemáme číslo epizody, vrátíme víc výsledků (50) aby uživatel viděl všechny epizody
         const hasEpisodeNumber = args.id.split(':').length >= 3;
-        const maxStreams = hasEpisodeNumber ? 20 : 50;
+        const maxStreams = hasEpisodeNumber ? 30 : 50;
         
         const filesToProcess = filteredResults.slice(0, maxStreams);
         console.log(`Processing ${filesToProcess.length} files for links...`);
