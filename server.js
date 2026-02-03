@@ -6,7 +6,7 @@ const xml2js = require('xml2js');
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '1.8.0',
+    version: '1.8.2',
     name: 'Webshare Anime',
     description: 'Anime z Webshare.cz',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -324,35 +324,45 @@ async function getCinemetaName(type, id) {
     return [];
 }
 
-// Získání názvů z TMDB (včetně českého)
+// Získání názvů z TMDB (české + anglické)
 async function getTMDBNames(imdbId, type) {
     try {
         console.log('Getting names from TMDB for', imdbId);
         
-        // TMDB endpoint podle typu
-        const tmdbType = type === 'movie' ? 'movie' : 'tv';
-        const url = `https://api.themoviedb.org/3/find/${imdbId}?api_key=84da28b04b49814a9cbe5e6b5c18aed7&external_source=imdb_id&language=cs-CZ`;
-        
-        const resp = await needle('get', url);
-        
-        if (!resp.body) return [];
-        
-        const results = resp.body.movie_results || resp.body.tv_results || [];
-        if (results.length === 0) return [];
-        
-        const media = results[0];
         const names = [];
         
-        // Český název (nebo anglický pokud český neexistuje)
-        if (media.name) names.push(media.name); // TV show
-        if (media.title) names.push(media.title); // Movie
+        // Nejdřív zkusíme česky
+        const urlCZ = `https://api.themoviedb.org/3/find/${imdbId}?api_key=84da28b04b49814a9cbe5e6b5c18aed7&external_source=imdb_id&language=cs-CZ`;
+        const respCZ = await needle('get', urlCZ);
         
-        // Original název
-        if (media.original_name && media.original_name !== media.name) names.push(media.original_name);
-        if (media.original_title && media.original_title !== media.title) names.push(media.original_title);
+        if (respCZ.body) {
+            const results = respCZ.body.movie_results || respCZ.body.tv_results || [];
+            if (results.length > 0) {
+                const media = results[0];
+                if (media.name) names.push(media.name); // TV show
+                if (media.title) names.push(media.title); // Movie
+            }
+        }
         
-        console.log('TMDB names:', names);
-        return [...new Set(names)];
+        // Pak anglicky
+        const urlEN = `https://api.themoviedb.org/3/find/${imdbId}?api_key=84da28b04b49814a9cbe5e6b5c18aed7&external_source=imdb_id&language=en-US`;
+        const respEN = await needle('get', urlEN);
+        
+        if (respEN.body) {
+            const results = respEN.body.movie_results || respEN.body.tv_results || [];
+            if (results.length > 0) {
+                const media = results[0];
+                if (media.name) names.push(media.name); // TV show
+                if (media.title) names.push(media.title); // Movie
+                if (media.original_name && media.original_name !== media.name) names.push(media.original_name);
+                if (media.original_title && media.original_title !== media.title) names.push(media.original_title);
+            }
+        }
+        
+        // Odstraníme duplicity
+        const uniqueNames = [...new Set(names)];
+        console.log('TMDB names:', uniqueNames);
+        return uniqueNames;
     } catch (error) {
         console.error('Error getting TMDB names:', error.message);
     }
@@ -534,14 +544,17 @@ builder.defineStreamHandler(async (args) => {
                     searchQueries = names.slice(0, 3).map(n => n.replace(/[!?:\*]/g, ''));
                 }
             } else {
-                // Jen jeden název (z Cinemeta) - použijeme jen ten
-                const mainName = names[0];
-                const cleanName = mainName.replace(/[!?:\*]/g, '');
+                // Jeden nebo více názvů (z TMDB nebo Cinemeta)
+                // Pro každý název vytvoříme samostatný search query
                 if (args.type === 'series' && season && episode) {
                     const seasonEp = `S${String(season).padStart(2, '0')}E${String(episode).padStart(2, '0')}`;
-                    searchQueries.push(`${cleanName} ${seasonEp}`);
+                    for (const name of names) {
+                        const cleanName = name.replace(/[!?:\*]/g, '');
+                        searchQueries.push(`${cleanName} ${seasonEp}`);
+                    }
                 } else {
-                    searchQueries.push(cleanName);
+                    // Filmy nebo bez epizody
+                    searchQueries = names.map(n => n.replace(/[!?:\*]/g, ''));
                 }
             }
         } else {
