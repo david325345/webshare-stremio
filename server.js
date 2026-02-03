@@ -6,7 +6,7 @@ const xml2js = require('xml2js');
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '1.9.4',
+    version: '2.0.1',
     name: 'Webshare Anime',
     description: 'Anime z Webshare.cz',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -768,12 +768,29 @@ builder.defineStreamHandler(async (args) => {
             }
         }
 
-        // Prioritizace podle relevance
+        // Řazení podle priority
         filteredResults.sort((a, b) => {
             const aName = a.name.toLowerCase();
             const bName = b.name.toLowerCase();
             
-            // 1. Relevance skóre - kolik klíčových slov se shoduje
+            // Detekce kvality
+            const getQualityScore = (name) => {
+                const upper = name.toUpperCase();
+                if (upper.includes('2160') || upper.includes('4K')) return 4;
+                if (upper.includes('1080')) return 3;
+                if (upper.includes('720')) return 2;
+                if (upper.includes('480')) return 1;
+                return 0;
+            };
+            
+            // Detekce jazyka (CZ/SK)
+            const hasLanguage = (name) => {
+                const upper = name.toUpperCase();
+                return upper.includes('CZ') || upper.includes('CZECH') || 
+                       upper.includes('SK') || upper.includes('SLOVAK');
+            };
+            
+            // 1. RELEVANCE - kolik slov z názvu se shoduje (NEJDŮLEŽITĚJŠÍ)
             const aScore = searchKeywords.reduce((score, keyword) => {
                 const words = keyword.split(/\s+/).filter(w => w.length >= 3);
                 const matches = words.filter(word => aName.includes(word)).length;
@@ -786,23 +803,20 @@ builder.defineStreamHandler(async (args) => {
                 return score + matches;
             }, 0);
             
-            // Pokud jsou skóre různá, vyšší skóre vyhrává
             if (aScore !== bScore) return bScore - aScore;
             
-            // 2. CZ/SK priorita
-            const aHasCZSK = a.name.toUpperCase().includes('CZ') || 
-                            a.name.toUpperCase().includes('CZECH') ||
-                            a.name.toUpperCase().includes('SK') ||
-                            a.name.toUpperCase().includes('SLOVAK');
-            const bHasCZSK = b.name.toUpperCase().includes('CZ') || 
-                            b.name.toUpperCase().includes('CZECH') ||
-                            b.name.toUpperCase().includes('SK') ||
-                            b.name.toUpperCase().includes('SLOVAK');
+            // 2. KVALITA (4K > 1080P > 720P > 480P)
+            const aQuality = getQualityScore(a.name);
+            const bQuality = getQualityScore(b.name);
+            if (aQuality !== bQuality) return bQuality - aQuality;
             
-            if (aHasCZSK && !bHasCZSK) return -1;
-            if (!aHasCZSK && bHasCZSK) return 1;
+            // 3. JAZYK (CZ/SK má přednost)
+            const aLang = hasLanguage(a.name);
+            const bLang = hasLanguage(b.name);
+            if (aLang && !bLang) return -1;
+            if (!aLang && bLang) return 1;
             
-            // 3. Seřadit podle čísla epizody v názvu (E01, E02, atd.)
+            // 4. ČÍSLO EPIZODY (E01, E02...)
             const aMatch = a.name.match(/[SE](\d+)/i);
             const bMatch = b.name.match(/[SE](\d+)/i);
             if (aMatch && bMatch) {
@@ -811,7 +825,7 @@ builder.defineStreamHandler(async (args) => {
                 if (aNum !== bNum) return aNum - bNum;
             }
             
-            // 4. Pak podle velikosti (větší = lepší kvalita)
+            // 5. VELIKOST (větší = lepší)
             return parseInt(b.size) - parseInt(a.size);
         });
 
