@@ -6,7 +6,7 @@ const xml2js = require('xml2js');
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '2.1.1',
+    version: '2.2.0',
     name: 'Webshare Anime',
     description: 'Anime z Webshare.cz',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -611,11 +611,15 @@ builder.defineStreamHandler(async (args) => {
                 console.log('Using multiple names from AniList for better coverage');
                 if (args.type === 'series' && season && episode) {
                     const seasonEp = `S${String(season).padStart(2, '0')}E${String(episode).padStart(2, '0')}`;
+                    const episodeOnly = `E${String(episode).padStart(2, '0')}`;
+                    
                     // Použijeme jen první 3 názvy (romaji + english + hlavní synonym)
                     for (const name of names.slice(0, 3)) {
                         // Vyčistíme speciální znaky
                         const cleanName = name.replace(/[!?:\*]/g, '');
                         searchQueries.push(`${cleanName} ${seasonEp}`);
+                        // Jen epizoda pro seriály bez čísla sezóny
+                        searchQueries.push(`${cleanName} ${episodeOnly}`);
                     }
                 } else {
                     // Jen první 3 názvy
@@ -626,9 +630,14 @@ builder.defineStreamHandler(async (args) => {
                 // Pro každý název vytvoříme samostatný search query
                 if (args.type === 'series' && season && episode) {
                     const seasonEp = `S${String(season).padStart(2, '0')}E${String(episode).padStart(2, '0')}`;
+                    const episodeOnly = `E${String(episode).padStart(2, '0')}`;
+                    
                     for (const name of names) {
                         const cleanName = name.replace(/[!?:\*]/g, '');
+                        // Standardní formát S01E04
                         searchQueries.push(`${cleanName} ${seasonEp}`);
+                        // Pouze epizoda E04 (pro seriály které nemají číslo sezóny)
+                        searchQueries.push(`${cleanName} ${episodeOnly}`);
                     }
                 } else {
                     // Filmy nebo bez epizody
