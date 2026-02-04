@@ -6,7 +6,7 @@ const xml2js = require('xml2js');
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '2.2.0',
+    version: '2.2.1',
     name: 'Webshare Anime',
     description: 'Anime z Webshare.cz',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -638,6 +638,12 @@ builder.defineStreamHandler(async (args) => {
                         searchQueries.push(`${cleanName} ${seasonEp}`);
                         // Pouze epizoda E04 (pro seriály které nemají číslo sezóny)
                         searchQueries.push(`${cleanName} ${episodeOnly}`);
+                        
+                        // Speciální případ: Simpsonovi → Simps.novi (obfuskace)
+                        if (cleanName.toLowerCase() === 'simpsonovi') {
+                            searchQueries.push(`Simps.novi ${seasonEp}`);
+                            searchQueries.push(`Simps.novi ${episodeOnly}`);
+                        }
                     }
                 } else {
                     // Filmy nebo bez epizody
