@@ -6,7 +6,7 @@ const xml2js = require('xml2js');
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '3.21.0',
+    version: '3.22.0',
     name: 'Webshare Anime',
     description: 'Anime z Webshare.cz',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -849,10 +849,25 @@ builder.defineStreamHandler(async (args) => {
                     
                     // Normalizace slov
                     const normalizedWords = words.map(w => normalizeChars(w));
-                    const matchedWords = normalizedWords.filter(word => nameNormalized.includes(word)).length;
                     
-                    // Vyžadujeme VŠECHNA slova (100%)
-                    return matchedWords === words.length;
+                    // Pro každé UNIKÁTNÍ slovo kontrolujeme, že se vyskytuje stejněkrát nebo víc
+                    const wordCounts = {};
+                    normalizedWords.forEach(word => {
+                        wordCounts[word] = (wordCounts[word] || 0) + 1;
+                    });
+                    
+                    // Kontrola že název obsahuje každé slovo alespoň tolikrát jako v query
+                    for (const [word, requiredCount] of Object.entries(wordCounts)) {
+                        const regex = new RegExp(word, 'gi');
+                        const matches = nameNormalized.match(regex);
+                        const actualCount = matches ? matches.length : 0;
+                        
+                        if (actualCount < requiredCount) {
+                            return false; // Slovo se nevyskytuje dost krát
+                        }
+                    }
+                    
+                    return true; // Všechna slova se vyskytují správněkrát
                 });
                 
                 return hasTitle;
