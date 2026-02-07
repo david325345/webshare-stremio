@@ -6,7 +6,7 @@ const xml2js = require('xml2js');
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '2.4.1',
+    version: '2.6.0',
     name: 'Webshare Anime',
     description: 'Anime z Webshare.cz',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -724,10 +724,13 @@ builder.defineStreamHandler(async (args) => {
                     // Pokud název obsahuje přesný pattern, akceptujeme
                     const hasExactPattern = exactPatterns.some(p => nameUpper.includes(p));
                     if (hasExactPattern) {
-                        // 2) Kontrola názvu anime
-                        const hasAnimeTitle = searchKeywords.some(keyword => {
-                            if (keyword.length < 4) return true;
-                            const words = keyword.split(/\s+/).filter(w => w.length > 3);
+                        // 2) Kontrola názvu
+                        const hasTitle = searchKeywords.some(keyword => {
+                            if (keyword.length < 2) return true;
+                            
+                            // Odstranění "the " ze začátku pro lepší matching
+                            const cleanKeyword = keyword.replace(/^the\s+/i, '');
+                            const words = cleanKeyword.split(/\s+/);
                             if (words.length === 0) return true;
                             
                             // Normalizace slov z keywords pro porovnání bez diakritiky
@@ -735,18 +738,17 @@ builder.defineStreamHandler(async (args) => {
                             const matchedWords = normalizedWords.filter(word => nameNormalized.includes(word)).length;
                             
                             // Pro běžné seriály: vyžadujeme VŠECHNA slova (100%)
-                            // Pro anime: stačí 20% (anime mají různé názvy)
                             const minWords = words.length; // 100% - všechna slova
                             
                             // Debug pro první 3 soubory
                             if (filteredResults.indexOf(result) < 3) {
                                 console.log(`  File: ${result.name.substring(0, 50)}`);
-                                console.log(`  Keyword: "${keyword}", Words: ${normalizedWords}, Matched: ${matchedWords}/${minWords}`);
+                                console.log(`  Keyword: "${keyword}" -> "${cleanKeyword}", Words: ${normalizedWords}, Matched: ${matchedWords}/${minWords}`);
                             }
                             
                             return matchedWords >= minWords;
                         });
-                        return hasAnimeTitle;
+                        return hasTitle;
                     }
                     
                     // 3) Episode-only patterny (E03, EP03, -03-) - POUZE pokud název NEOBSAHUJE jinou sezónu
@@ -827,19 +829,24 @@ builder.defineStreamHandler(async (args) => {
                             if (hasWrongSeason) return false;
                         }
                         
-                        // Kontrola názvu - musí obsahovat NEJDELŠÍ slovo z názvu (to je nejspecifičtější)
-                        const hasLongestWord = searchKeywords.some(keyword => {
-                            if (keyword.length < 4) return false;
-                            const words = keyword.split(/\s+/).filter(w => w.length >= 4);
+                        // Kontrola názvu - musí obsahovat VŠECHNA slova z názvu
+                        const hasAllWords = searchKeywords.some(keyword => {
+                            if (keyword.length < 2) return false;
+                            
+                            // Odstranění "the " ze začátku
+                            const cleanKeyword = keyword.replace(/^the\s+/i, '');
+                            const words = cleanKeyword.split(/\s+/);
                             if (words.length === 0) return false;
                             
-                            // Najdeme nejdelší slovo a normalizujeme
-                            const longestWord = words.reduce((a, b) => a.length > b.length ? a : b);
-                            const normalizedLongest = normalizeChars(longestWord);
-                            return nameNormalized.includes(normalizedLongest);
+                            // Normalizujeme všechna slova a kontrolujeme každé
+                            const normalizedWords = words.map(w => normalizeChars(w));
+                            const matchedWords = normalizedWords.filter(word => nameNormalized.includes(word)).length;
+                            
+                            // Vyžadujeme VŠECHNA slova (100%)
+                            return matchedWords === words.length;
                         });
                         
-                        return hasLongestWord;
+                        return hasAllWords;
                     });
                     console.log(`Relaxed filter found ${filteredResults.length} results`);
                 }
