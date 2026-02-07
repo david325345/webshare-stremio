@@ -6,7 +6,7 @@ const xml2js = require('xml2js');
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '2.6.2',
+    version: '2.7.2',
     name: 'Webshare Anime',
     description: 'Anime z Webshare.cz',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -688,6 +688,26 @@ builder.defineStreamHandler(async (args) => {
 
         // Pokud hledáme konkrétní epizodu, filtrujeme jen tu
         let filteredResults = results;
+        
+        // Pro FILMY: filtrujeme podle roku (pokud je v názvu)
+        if (args.type === 'movie' && cinemataYear) {
+            console.log(`Filtering movies by year: ${cinemataYear} (±1 year tolerance)`);
+            filteredResults = results.filter(result => {
+                // Hledáme rok v názvu (formát: 2009, (2011), .2015.)
+                const yearMatch = result.name.match(/[\(\.\s](\d{4})[\)\.\s]/);
+                if (yearMatch) {
+                    const fileYear = parseInt(yearMatch[1]);
+                    const yearDiff = Math.abs(fileYear - cinemataYear);
+                    if (yearDiff > 1) {
+                        console.log(`  Filtered out: ${result.name.substring(0, 50)} (year ${fileYear} vs ${cinemataYear})`);
+                        return false;
+                    }
+                }
+                return true;
+            });
+            console.log(`After year filter: ${filteredResults.length} results`);
+        }
+        
         if (args.type === 'series') {
             const parts = args.id.split(':');
             let targetSeason, targetEpisode;
@@ -755,7 +775,7 @@ builder.defineStreamHandler(async (args) => {
                     const episodeOnlyPatterns = [
                         new RegExp(`E${String(targetEpisode).padStart(2, '0')}[^0-9]`, 'i'),
                         new RegExp(`E${String(targetEpisode).padStart(2, '0')}$`, 'i'),
-                        // Jen číslo: " 03 ", "-03-", "-03.", "_03_", "[03]", "(03)"
+                        // Jen číslo s oddělovačem před I po: " 03 ", "-03-", ".03.", "_03_", "[03]", "(03)"
                         new RegExp(`[\\s\\-_\\.\\[\\(]${String(targetEpisode).padStart(2, '0')}[\\s\\-_\\.\\]\\)]`, 'i'),
                         new RegExp(`[\\s\\-_\\.\\[\\(]${String(targetEpisode).padStart(2, '0')}$`, 'i'),
                         // Na začátku souboru: "08 -", "08.", "08_"
@@ -766,7 +786,7 @@ builder.defineStreamHandler(async (args) => {
                             new RegExp(`[\\s\\-_\\.\\[\\(]${targetEpisode}$`, 'i'),
                             new RegExp(`^${targetEpisode}[\\s\\-_\\.]`, 'i'),
                         ] : []),
-                        // Varianta bez nuly: " 3 ", "-3-", "[3]" (pro epizody 1-9)
+                        // Jednociferná čísla pro 1-9: " 3 ", "-3-", "[3]", ".3."
                         ...(targetEpisode < 10 ? [
                             new RegExp(`[\\s\\-_\\.\\[\\(]${targetEpisode}[\\s\\-_\\.\\]\\)]`, 'i'),
                             new RegExp(`[\\s\\-_\\.\\[\\(]${targetEpisode}$`, 'i'),
@@ -833,6 +853,10 @@ builder.defineStreamHandler(async (args) => {
                                     new RegExp(`[\\s\\-_\\.\\[\\(]${targetEpisode}[\\s\\-_\\.\\]\\)]`, 'i'),
                                     new RegExp(`^${targetEpisode}[\\s\\-_\\.]`, 'i'),
                                 ] : []),
+                                // Jednociferná čísla pro 1-9
+                                ...(targetEpisode < 10 ? [
+                                    new RegExp(`[\\s\\-_\\.\\[\\(]${targetEpisode}[\\s\\-_\\.\\]\\)]`, 'i'),
+                                ] : []),
                             ];
                             
                             const hasEpisodePattern = episodeOnlyPatterns.some(p => p.test(nameUpper));
@@ -863,6 +887,14 @@ builder.defineStreamHandler(async (args) => {
                         return hasAllWords;
                     });
                     console.log(`Relaxed filter found ${filteredResults.length} results`);
+                    
+                    // Debug - vypíšeme první 5 souborů
+                    if (filteredResults.length > 0) {
+                        console.log('Relaxed filter matched files:');
+                        filteredResults.slice(0, 5).forEach((f, i) => {
+                            console.log(`  ${i+1}. ${f.name}`);
+                        });
+                    }
                 }
             } else {
                 console.log('No episode number to filter - showing all results');
