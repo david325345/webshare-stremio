@@ -6,7 +6,7 @@ const xml2js = require('xml2js');
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '3.6.1',
+    version: '3.7.1',
     name: 'Webshare Anime',
     description: 'Anime z Webshare.cz',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -511,12 +511,8 @@ builder.defineStreamHandler(async (args) => {
                 // Získáme rok z TMDB
                 try {
                     const baseId = args.id.split(':')[0];
-                    const tmdbResp = await needle('get', `https://api.themoviedb.org/3/find/${baseId}`, {
-                        params: {
-                            api_key: args.config.tmdb_api_key,
-                            external_source: 'imdb_id'
-                        }
-                    });
+                    const tmdbUrl = `https://api.themoviedb.org/3/find/${baseId}?api_key=${args.config.tmdb_api_key}&external_source=imdb_id`;
+                    const tmdbResp = await needle('get', tmdbUrl);
                     
                     if (tmdbResp.body) {
                         const results = tmdbResp.body.tv_results || tmdbResp.body.movie_results || [];
@@ -529,7 +525,7 @@ builder.defineStreamHandler(async (args) => {
                         }
                     }
                 } catch (e) {
-                    console.log('Could not get year from TMDB');
+                    console.log('Could not get year from TMDB:', e.message);
                 }
             } else {
                 // TMDB nenašlo nic - použijeme Cinemeta jako zálohu
@@ -838,15 +834,18 @@ builder.defineStreamHandler(async (args) => {
                     
                     const hasEpisodePattern = episodeOnlyPatterns.some(p => p.test(nameUpper));
                     if (hasEpisodePattern) {
-                        // Ujistíme se, že v názvu NENÍ jiné číslo sezóny
-                        const hasWrongSeason = /S(\d+)E/i.test(nameUpper) && !exactPatterns.some(p => nameUpper.includes(p));
-                        if (hasWrongSeason) {
-                            // Debug - ukázat proč bylo odmítnuto
-                            const seasonMatch = nameUpper.match(/S(\d+)E/i);
-                            if (seasonMatch && filteredResults.indexOf(result) < 5) {
-                                console.log(`  REJECTED wrong season: ${result.name.substring(0, 60)} (has S${seasonMatch[1]}, need S${targetSeason})`);
+                        // KRITICKÁ KONTROLA: Ujistíme se, že v názvu NENÍ jiné číslo sezóny
+                        // Hledáme S1, S2, S3... nebo S01, S02, S03... 
+                        const seasonMatch = nameUpper.match(/S(\d+)/i);
+                        if (seasonMatch) {
+                            const fileSeason = parseInt(seasonMatch[1]);
+                            if (fileSeason !== targetSeason) {
+                                // Debug - ukázat proč bylo odmítnuto
+                                if (filteredResults.indexOf(result) < 5) {
+                                    console.log(`  REJECTED wrong season: ${result.name.substring(0, 60)} (has S${fileSeason}, need S${targetSeason})`);
+                                }
+                                return false;  // Má špatnou sezónu, odmítneme
                             }
-                            return false;  // Má špatnou sezónu, odmítneme
                         }
                         
                         // Kontrola názvu anime
@@ -924,14 +923,18 @@ builder.defineStreamHandler(async (args) => {
                                 return false;
                             }
                             
-                            // Kontrola že NEMÁ špatnou sezónu
-                            const hasWrongSeason = /S(\d+)E/i.test(nameUpper) && !exactPatterns.some(p => nameUpper.includes(p));
-                            if (hasWrongSeason) {
-                                if (debugCount < 5) {
-                                    console.log(`  DEBUG: ${result.name.substring(0, 60)} - wrong season`);
-                                    debugCount++;
+                            // KRITICKÁ KONTROLA: Kontrola že NEMÁ špatnou sezónu
+                            // Hledáme S1, S2, S3... nebo S01, S02, S03...
+                            const seasonMatch = nameUpper.match(/S(\d+)/i);
+                            if (seasonMatch) {
+                                const fileSeason = parseInt(seasonMatch[1]);
+                                if (fileSeason !== targetSeason) {
+                                    if (debugCount < 5) {
+                                        console.log(`  DEBUG: ${result.name.substring(0, 60)} - wrong season S${fileSeason} (need S${targetSeason})`);
+                                        debugCount++;
+                                    }
+                                    return false;
                                 }
-                                return false;
                             }
                         }
                         
