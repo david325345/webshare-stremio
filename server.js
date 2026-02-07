@@ -6,7 +6,7 @@ const xml2js = require('xml2js');
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '3.18.1',
+    version: '3.18.3',
     name: 'Webshare Anime',
     description: 'Anime z Webshare.cz',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -16,7 +16,9 @@ const manifest = {
     idPrefixes: ['tt', 'kitsu'],
     behaviorHints: {
         configurable: true,
-        configurationRequired: false
+        configurationRequired: false,
+        adult: false,
+        p2p: false
     },
     config: [
         {
@@ -1329,15 +1331,23 @@ builder.defineStreamHandler(async (args) => {
         const validStreams = allStreams.filter(s => s !== null);
         
         console.log(`Returning ${validStreams.length} streams to Stremio`);
-        return { 
-            streams: validStreams,
-            cacheMaxAge: 0 // Vypneme cache pro streamy
+        
+        // Vracíme pole streamů - i když je prázdné
+        const response = { 
+            streams: validStreams.length > 0 ? validStreams : []
         };
+        
+        console.log('=== RESPONSE READY ===');
+        console.log('Response object:', JSON.stringify(response, null, 2).substring(0, 500));
+        
+        return response;
     } catch (error) {
         console.error('=== STREAM HANDLER ERROR ===');
         console.error('Error:', error.message);
         console.error('Stack:', error.stack);
         console.error('Args:', JSON.stringify(args));
+        
+        // Vracíme prázdné pole i při erroru
         return { streams: [] };
     }
 });
