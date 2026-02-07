@@ -6,7 +6,7 @@ const xml2js = require('xml2js');
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '3.1.0',
+    version: '3.4.0',
     name: 'Webshare Anime',
     description: 'Anime z Webshare.cz',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -373,6 +373,7 @@ async function getTMDBNames(imdbId, type, apiKey) {
             console.log('TMDB CZ results count:', results.length);
             if (results.length > 0) {
                 const media = results[0];
+                // Přidáme lokalizovaný název
                 if (media.name) names.push(media.name); // TV show
                 if (media.title) names.push(media.title); // Movie
             }
@@ -393,17 +394,19 @@ async function getTMDBNames(imdbId, type, apiKey) {
             
             if (results.length > 0) {
                 const media = results[0];
-                if (media.name) names.push(media.name); // TV show
-                if (media.title) names.push(media.title); // Movie
-                if (media.original_name && media.original_name !== media.name) names.push(media.original_name);
-                if (media.original_title && media.original_title !== media.title) names.push(media.original_title);
+                // Přidáme anglické názvy (pokud už nejsou)
+                if (media.name && !names.includes(media.name)) names.push(media.name);
+                if (media.title && !names.includes(media.title)) names.push(media.title);
             }
         }
         
-        // Odstraníme duplicity
-        const uniqueNames = [...new Set(names)];
-        console.log('TMDB names:', uniqueNames);
-        return uniqueNames;
+        // Filtrujeme - POUZE latinské znaky (žádná japonština, čínština, korejština)
+        const latinNames = names.filter(name => {
+            return /^[\x00-\x7F\u00C0-\u024F\u1E00-\u1EFF\s]+$/.test(name);
+        });
+        
+        console.log('TMDB names (latin only):', latinNames);
+        return latinNames.length > 0 ? latinNames : names; // Fallback pokud žádné latinské
     } catch (error) {
         console.error('Error getting TMDB names:', error.message);
     }
@@ -556,8 +559,9 @@ builder.defineStreamHandler(async (args) => {
                 }
             }
             
-            // Pro anime - zkusíme AniList (používáme první název ať už z TMDB nebo Cinemeta)
-            const searchName = names[0];
+            // Pro anime - zkusíme AniList (používáme ANGLICKÝ název, ne český)
+            // Anglický název je obvykle druhý v poli (první je český z CZ query)
+            const searchName = names.length > 1 ? names[names.length - 1] : names[0]; // Poslední = anglický
             console.log('Checking if anime on AniList with name:', searchName);
             
             const anilistResult = await getAnimeNamesFromTitle(searchName);
@@ -598,7 +602,7 @@ builder.defineStreamHandler(async (args) => {
                 
                 // Pokud se názvy shodují aspoň z 30% A roky sedí, je to anime
                 if (bestSimilarity >= 0.3 && yearMatch) {
-                    console.log('Found anime on AniList - using AniList names only');
+                    console.log('Found anime on AniList - using AniList names only (NO Czech names)');
                     
                     const latinNames = anilistNames.filter(name => {
                         return /^[\x00-\x7F\u00C0-\u024F\u1E00-\u1EFF]+$/.test(name);
@@ -607,9 +611,14 @@ builder.defineStreamHandler(async (args) => {
                     console.log('Filtered to latin names:', latinNames);
                     
                     if (latinNames.length > 0) {
+                        // Pro anime používáme JEN AniList názvy (ne TMDB české!)
                         names = latinNames;
+                    } else {
+                        // Žádné latinské názvy z AniList - použijeme anglický z TMDB
+                        console.log('No latin names from AniList, using English from TMDB');
+                        const englishName = tmdbNames.length > 1 ? tmdbNames[tmdbNames.length - 1] : tmdbNames[0];
+                        names = [englishName];
                     }
-                    // Pokud žádné latinské názvy, necháme původní z TMDB/Cinemeta
                 }
             }
 
