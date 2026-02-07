@@ -6,7 +6,7 @@ const xml2js = require('xml2js');
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '3.10.0',
+    version: '3.12.0',
     name: 'Webshare Anime',
     description: 'Anime z Webshare.cz',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -611,20 +611,24 @@ builder.defineStreamHandler(async (args) => {
                 
                 // Pokud se názvy shodují aspoň z 30% A roky sedí, je to anime
                 if (bestSimilarity >= 0.3 && yearMatch) {
-                    console.log('Found anime on AniList - using AniList names only (NO Czech names)');
+                    console.log('Found anime on AniList - using AniList names only (English/Romaji)');
                     
-                    const latinNames = anilistNames.filter(name => {
-                        return /^[\x00-\x7F\u00C0-\u024F\u1E00-\u1EFF]+$/.test(name);
+                    // Filtrujeme jen základní latinku (bez diakritiky pro jiné jazyky)
+                    // Povolujeme: a-z, A-Z, 0-9, mezery, pomlčky, apostrofy, závorky
+                    // Zakazujeme: á, ñ, ü, ř, č atd. (české, španělské, německé...)
+                    const englishRomajiNames = anilistNames.filter(name => {
+                        // Jen základní ASCII znaky (bez diakritiky)
+                        return /^[a-zA-Z0-9\s\-':!\[\]\(\)\.&]+$/.test(name);
                     });
                     
-                    console.log('Filtered to latin names:', latinNames);
+                    console.log('Filtered to English/Romaji names:', englishRomajiNames);
                     
-                    if (latinNames.length > 0) {
-                        // Pro anime používáme JEN AniList názvy (ne TMDB české!)
-                        names = latinNames;
+                    if (englishRomajiNames.length > 0) {
+                        // Pro anime používáme JEN anglické/romaji názvy
+                        names = englishRomajiNames;
                     } else {
-                        // Žádné latinské názvy z AniList - použijeme anglický z TMDB
-                        console.log('No latin names from AniList, using English from TMDB');
+                        // Žádné anglické názvy z AniList - použijeme anglický z TMDB
+                        console.log('No English/Romaji names from AniList, using English from TMDB');
                         const englishName = tmdbNames.length > 1 ? tmdbNames[tmdbNames.length - 1] : tmdbNames[0];
                         names = [englishName];
                     }
@@ -750,6 +754,43 @@ builder.defineStreamHandler(async (args) => {
                 return true;
             });
             console.log(`After year filter: ${filteredResults.length} results`);
+        }
+        
+        // Pro FILMY: filtrujeme také podle názvu
+        if (args.type === 'movie' && searchKeywords.length > 0) {
+            console.log('Filtering movies by title');
+            const beforeTitleFilter = filteredResults.length;
+            
+            filteredResults = filteredResults.filter(result => {
+                const nameLower = result.name.toLowerCase();
+                const nameNormalized = normalizeChars(nameLower);
+                
+                // Kontrola že obsahuje VŠECHNA slova z ALESPOŇ JEDNOHO názvu
+                const hasTitle = searchKeywords.some(keyword => {
+                    if (keyword.length < 2) return true;
+                    
+                    // Pro krátké keywords kontrolovat přímo
+                    if (keyword.length <= 4) {
+                        return nameLower.includes(keyword);
+                    }
+                    
+                    // Odstranění "the " ze začátku
+                    const cleanKeyword = keyword.replace(/^the\s+/i, '');
+                    const words = cleanKeyword.split(/\s+/);
+                    if (words.length === 0) return true;
+                    
+                    // Normalizace slov
+                    const normalizedWords = words.map(w => normalizeChars(w));
+                    const matchedWords = normalizedWords.filter(word => nameNormalized.includes(word)).length;
+                    
+                    // Vyžadujeme VŠECHNA slova (100%)
+                    return matchedWords === words.length;
+                });
+                
+                return hasTitle;
+            });
+            
+            console.log(`After title filter: ${filteredResults.length} results (was ${beforeTitleFilter})`);
         }
         
         if (args.type === 'series') {
