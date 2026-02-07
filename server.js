@@ -6,7 +6,7 @@ const xml2js = require('xml2js');
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '3.16.1',
+    version: '3.18.0',
     name: 'Webshare Anime',
     description: 'Anime z Webshare.cz',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -911,18 +911,35 @@ builder.defineStreamHandler(async (args) => {
                     const hasEpisodePattern = episodeOnlyPatterns.some(p => p.test(nameUpper));
                     if (hasEpisodePattern) {
                         // KRITICKÁ KONTROLA: Ujistíme se, že v názvu NENÍ jiné číslo sezóny
-                        // Hledáme S1, S2, S3... nebo S01, S02, S03... 
-                        const seasonMatch = nameUpper.match(/S(\d+)/i);
+                        // Hledáme: S1, S2, S01, S02, "2nd Season", "Season 2", "Part 2"
+                        let fileSeason = null;
+                        
+                        // Pattern 1: S1, S2, S01, S02...
+                        const sMatch = nameUpper.match(/S(\d+)/i);
+                        if (sMatch) {
+                            fileSeason = parseInt(sMatch[1]);
+                        }
+                        
+                        // Pattern 2: "2nd Season", "3rd Season", "Season 2"
+                        const seasonMatch = nameUpper.match(/(\d+)(?:ST|ND|RD|TH)?\s+SEASON/i) || 
+                                          nameUpper.match(/SEASON\s+(\d+)/i);
                         if (seasonMatch) {
-                            const fileSeason = parseInt(seasonMatch[1]);
-                            if (fileSeason !== targetSeason) {
-                                // Debug - ukázat proč bylo odmítnuto
-                                if (filteredResults.indexOf(result) < 5) {
-                                    console.log(`  REJECTED wrong season: ${result.name.substring(0, 60)} (has S${fileSeason}, need S${targetSeason})`);
-                                }
-                                return false;  // Má špatnou sezónu, odmítneme
+                            fileSeason = parseInt(seasonMatch[1]);
+                        }
+                        
+                        // Pattern 3: "Part 2", "P2", "Pt 2"
+                        const partMatch = nameUpper.match(/(?:PART|P|PT)\.?\s*(\d+)/i);
+                        if (partMatch && !fileSeason) { // Jen pokud jsme nenašli Season
+                            fileSeason = parseInt(partMatch[1]);
+                        }
+                        
+                        if (fileSeason && fileSeason !== targetSeason) {
+                            // Debug - ukázat proč bylo odmítnuto
+                            if (filteredResults.indexOf(result) < 5) {
+                                console.log(`  REJECTED wrong season: ${result.name.substring(0, 60)} (has S${fileSeason}, need S${targetSeason})`);
                             }
-                        } else {
+                            return false;  // Má špatnou sezónu, odmítneme
+                        } else if (!fileSeason) {
                             // Soubor NEMÁ číslo sezóny (jen E01, - 01, atd.)
                             // Akceptujeme JEN pokud hledáme sezónu 1!
                             if (targetSeason !== 1) {
@@ -1016,26 +1033,31 @@ builder.defineStreamHandler(async (args) => {
                             }
                             
                             // KRITICKÁ KONTROLA: Kontrola že NEMÁ špatnou sezónu
-                            // Hledáme S1, S2, S3... nebo S01, S02, S03...
-                            const seasonMatch = nameUpper.match(/S(\d+)/i);
-                            if (seasonMatch) {
-                                const fileSeason = parseInt(seasonMatch[1]);
-                                if (fileSeason !== targetSeason) {
-                                    if (debugCount < 5) {
-                                        console.log(`  DEBUG: ${result.name.substring(0, 60)} - wrong season S${fileSeason} (need S${targetSeason})`);
-                                        debugCount++;
-                                    }
-                                    return false;
+                            // Hledáme: S1, S2, "2nd Season", "Season 2", "Part 2"
+                            let fileSeason = null;
+                            
+                            const sMatch = nameUpper.match(/S(\d+)/i);
+                            if (sMatch) fileSeason = parseInt(sMatch[1]);
+                            
+                            const seasonMatch = nameUpper.match(/(\d+)(?:ST|ND|RD|TH)?\s+SEASON/i) || 
+                                              nameUpper.match(/SEASON\s+(\d+)/i);
+                            if (seasonMatch) fileSeason = parseInt(seasonMatch[1]);
+                            
+                            const partMatch = nameUpper.match(/(?:PART|P|PT)\.?\s*(\d+)/i);
+                            if (partMatch && !fileSeason) fileSeason = parseInt(partMatch[1]);
+                            
+                            if (fileSeason && fileSeason !== targetSeason) {
+                                if (debugCount < 5) {
+                                    console.log(`  DEBUG: ${result.name.substring(0, 60)} - wrong season S${fileSeason} (need S${targetSeason})`);
+                                    debugCount++;
                                 }
-                            } else {
-                                // Soubor NEMÁ číslo sezóny - akceptujeme JEN pro sezónu 1
-                                if (targetSeason !== 1) {
-                                    if (debugCount < 5) {
-                                        console.log(`  DEBUG: ${result.name.substring(0, 60)} - no season (need S${targetSeason})`);
-                                        debugCount++;
-                                    }
-                                    return false;
+                                return false;
+                            } else if (!fileSeason && targetSeason !== 1) {
+                                if (debugCount < 5) {
+                                    console.log(`  DEBUG: ${result.name.substring(0, 60)} - no season (need S${targetSeason})`);
+                                    debugCount++;
                                 }
+                                return false;
                             }
                         }
                         
@@ -1115,6 +1137,8 @@ builder.defineStreamHandler(async (args) => {
         filteredResults.sort((a, b) => {
             const aName = a.name.toLowerCase();
             const bName = b.name.toLowerCase();
+            const aUpper = a.name.toUpperCase();
+            const bUpper = b.name.toUpperCase();
             
             // Detekce kvality
             const getQualityScore = (name) => {
@@ -1133,7 +1157,31 @@ builder.defineStreamHandler(async (args) => {
                        upper.includes('SK') || upper.includes('SLOVAK');
             };
             
-            // 1. JAZYK (CZ/SK má přednost) - NEJVYŠŠÍ PRIORITA
+            // SPECIÁLNÍ: Pro seriály s konkrétní epizodou - exact match pattern má nejvyšší prioritu
+            if (args.type === 'series' && args.id.includes(':')) {
+                const parts = args.id.split(':');
+                let season, episode;
+                
+                if (parts[0].startsWith('kitsu')) {
+                    season = 1;
+                    episode = parseInt(parts[2]);
+                } else {
+                    season = parseInt(parts[1]);
+                    episode = parseInt(parts[2]);
+                }
+                
+                if (season && episode) {
+                    const exactPattern = `S${String(season).padStart(2, '0')}E${String(episode).padStart(2, '0')}`;
+                    const aHasExact = aUpper.includes(exactPattern);
+                    const bHasExact = bUpper.includes(exactPattern);
+                    
+                    // Exact match má absolutní prioritu
+                    if (aHasExact && !bHasExact) return -1;
+                    if (!aHasExact && bHasExact) return 1;
+                }
+            }
+            
+            // 1. JAZYK (CZ/SK má přednost)
             const aLang = hasLanguage(a.name);
             const bLang = hasLanguage(b.name);
             if (aLang && !bLang) return -1;
