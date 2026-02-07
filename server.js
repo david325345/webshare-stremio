@@ -6,7 +6,7 @@ const xml2js = require('xml2js');
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '2.8.0',
+    version: '2.8.1',
     name: 'Webshare Anime',
     description: 'Anime z Webshare.cz',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -834,6 +834,8 @@ builder.defineStreamHandler(async (args) => {
                 // Pokud nic nenajdeme s názvem, zkusíme jen sezon+epizodu s kontrolou alespoň nejdelšího slova
                 if (filteredResults.length === 0) {
                     console.log('No matches with title filter, trying season+episode with partial name match');
+                    
+                    let debugCount = 0;
                     filteredResults = results.filter(result => {
                         const nameUpper = result.name.toUpperCase();
                         const nameLower = result.name.toLowerCase();
@@ -867,11 +869,23 @@ builder.defineStreamHandler(async (args) => {
                             ];
                             
                             const hasEpisodePattern = episodeOnlyPatterns.some(p => p.test(nameUpper));
-                            if (!hasEpisodePattern) return false;
+                            if (!hasEpisodePattern) {
+                                if (debugCount < 5 && nameNormalized.includes('svet')) {
+                                    console.log(`  DEBUG: ${result.name.substring(0, 60)} - no episode pattern`);
+                                    debugCount++;
+                                }
+                                return false;
+                            }
                             
                             // Kontrola že NEMÁ špatnou sezónu
                             const hasWrongSeason = /S(\d+)E/i.test(nameUpper) && !exactPatterns.some(p => nameUpper.includes(p));
-                            if (hasWrongSeason) return false;
+                            if (hasWrongSeason) {
+                                if (debugCount < 5) {
+                                    console.log(`  DEBUG: ${result.name.substring(0, 60)} - wrong season`);
+                                    debugCount++;
+                                }
+                                return false;
+                            }
                         }
                         
                         // Kontrola názvu - musí obsahovat VŠECHNA slova z názvu
@@ -886,6 +900,12 @@ builder.defineStreamHandler(async (args) => {
                             // Normalizujeme všechna slova a kontrolujeme každé
                             const normalizedWords = words.map(w => normalizeChars(w));
                             const matchedWords = normalizedWords.filter(word => nameNormalized.includes(word)).length;
+                            
+                            if (debugCount < 5 && nameNormalized.includes('svet')) {
+                                console.log(`  DEBUG: ${result.name.substring(0, 60)}`);
+                                console.log(`    Keywords: "${cleanKeyword}", Words: [${normalizedWords.join(', ')}], Matched: ${matchedWords}/${words.length}`);
+                                debugCount++;
+                            }
                             
                             // Vyžadujeme VŠECHNA slova (100%)
                             return matchedWords === words.length;
