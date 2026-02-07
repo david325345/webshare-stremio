@@ -6,7 +6,7 @@ const xml2js = require('xml2js');
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '3.7.1',
+    version: '3.7.2',
     name: 'Webshare Anime',
     description: 'Anime z Webshare.cz',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -512,16 +512,25 @@ builder.defineStreamHandler(async (args) => {
                 try {
                     const baseId = args.id.split(':')[0];
                     const tmdbUrl = `https://api.themoviedb.org/3/find/${baseId}?api_key=${args.config.tmdb_api_key}&external_source=imdb_id`;
+                    console.log('Fetching year from TMDB:', tmdbUrl.replace(args.config.tmdb_api_key, 'API_KEY'));
                     const tmdbResp = await needle('get', tmdbUrl);
                     
+                    console.log('TMDB year response status:', tmdbResp.statusCode);
                     if (tmdbResp.body) {
-                        const results = tmdbResp.body.tv_results || tmdbResp.body.movie_results || [];
+                        const tvResults = tmdbResp.body.tv_results || [];
+                        const movieResults = tmdbResp.body.movie_results || [];
+                        console.log('TMDB year results:', { tv: tvResults.length, movie: movieResults.length });
+                        
+                        const results = [...tvResults, ...movieResults];
                         if (results.length > 0) {
                             const dateStr = results[0].first_air_date || results[0].release_date;
+                            console.log('Date string from TMDB:', dateStr);
                             if (dateStr) {
                                 cinemataYear = new Date(dateStr).getFullYear();
                                 console.log('TMDB year:', cinemataYear);
                             }
+                        } else {
+                            console.log('No results from TMDB year fetch');
                         }
                     }
                 } catch (e) {
