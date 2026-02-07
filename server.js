@@ -6,7 +6,7 @@ const xml2js = require('xml2js');
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '3.18.0',
+    version: '3.18.1',
     name: 'Webshare Anime',
     description: 'Anime z Webshare.cz',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -1171,13 +1171,22 @@ builder.defineStreamHandler(async (args) => {
                 }
                 
                 if (season && episode) {
+                    // Pattern 1: S01E01 (full format)
                     const exactPattern = `S${String(season).padStart(2, '0')}E${String(episode).padStart(2, '0')}`;
                     const aHasExact = aUpper.includes(exactPattern);
                     const bHasExact = bUpper.includes(exactPattern);
                     
-                    // Exact match má absolutní prioritu
                     if (aHasExact && !bHasExact) return -1;
                     if (!aHasExact && bHasExact) return 1;
+                    
+                    // Pattern 2: E01 (episode only - pro anime)
+                    const episodePattern = `E${String(episode).padStart(2, '0')}`;
+                    const aHasEpisode = aUpper.includes(episodePattern);
+                    const bHasEpisode = bUpper.includes(episodePattern);
+                    
+                    // Soubory s E01 mají prioritu nad soubory bez něj
+                    if (aHasEpisode && !bHasEpisode) return -1;
+                    if (!aHasEpisode && bHasEpisode) return 1;
                 }
             }
             
