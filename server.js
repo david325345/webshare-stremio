@@ -6,7 +6,7 @@ const xml2js = require('xml2js');
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '3.4.3',
+    version: '3.5.0',
     name: 'Webshare Anime',
     description: 'Anime z Webshare.cz',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -594,8 +594,12 @@ builder.defineStreamHandler(async (args) => {
                 if (anilistYear && cinemataYear) {
                     const yearDiff = Math.abs(anilistYear - cinemataYear);
                     console.log(`Year difference: ${yearDiff} years (AniList: ${anilistYear}, Source: ${cinemataYear})`);
-                    if (yearDiff > 2) {
-                        console.log('Year difference too large - probably not the same anime');
+                    
+                    // Pro filmy: přesný rok, pro seriály: ±2 roky tolerance
+                    const maxYearDiff = args.type === 'movie' ? 0 : 2;
+                    
+                    if (yearDiff > maxYearDiff) {
+                        console.log(`Year difference too large (max ${maxYearDiff} for ${args.type}) - probably not the same content`);
                         yearMatch = false;
                     }
                 }
