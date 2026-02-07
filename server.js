@@ -1,4 +1,4 @@
-const { addonBuilder, serveHTTP } = require('stremio-addon-sdk');
+const { addonBuilder, getRouter } = require('stremio-addon-sdk');
 const needle = require('needle');
 const md5 = require('cryptmd5');
 const sha1 = require('sha1');
@@ -6,7 +6,7 @@ const xml2js = require('xml2js');
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '3.18.3',
+    version: '3.19.0',
     name: 'Webshare Anime',
     description: 'Anime z Webshare.cz',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -1382,9 +1382,30 @@ cron.schedule('*/10 * * * *', async () => {
 
 console.log('✅ Keep-alive scheduler initialized');
 
-// ========== SERVER START ==========
-serveHTTP(builder.getInterface(), {
-    port: process.env.PORT || 7000
+// ========== EXPRESS SERVER ==========
+const app = express();
+
+// CORS middleware
+app.use((req, res, next) => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+    if (req.method === 'OPTIONS') {
+        return res.sendStatus(200);
+    }
+    next();
 });
 
-console.log(`HTTP addon accessible at: http://localhost:${process.env.PORT || 7000}/manifest.json`);
+// Static files (logo)
+app.use(express.static(path.join(__dirname, 'public')));
+
+// Stremio addon routes
+const addonRouter = getRouter(builder.getInterface());
+app.use(addonRouter);
+
+const PORT = process.env.PORT || 7000;
+app.listen(PORT, () => {
+    console.log(`🚀 Server running on port ${PORT}`);
+    console.log(`📡 Addon accessible at: http://localhost:${PORT}/manifest.json`);
+});
+
