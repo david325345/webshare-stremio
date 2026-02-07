@@ -6,7 +6,7 @@ const xml2js = require('xml2js');
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '2.3.1',
+    version: '2.3.2',
     name: 'Webshare Anime',
     description: 'Anime z Webshare.cz',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -676,7 +676,8 @@ builder.defineStreamHandler(async (args) => {
 
         // Vytvoříme klíčová slova z search queries pro filtrování a sorting
         const searchKeywords = searchQueries.map(q => {
-            return q.replace(/S\d+E\d+/gi, '').trim().toLowerCase();
+            // Odstraníme S01E08, E08 apod.
+            return q.replace(/S\d+E\d+/gi, '').replace(/\sE\d+/gi, '').trim().toLowerCase();
         });
         console.log('Search keywords for matching:', searchKeywords);
         
