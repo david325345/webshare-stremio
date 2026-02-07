@@ -6,7 +6,7 @@ const xml2js = require('xml2js');
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '2.2.1',
+    version: '2.2.2',
     name: 'Webshare Anime',
     description: 'Anime z Webshare.cz',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -600,6 +600,13 @@ builder.defineStreamHandler(async (args) => {
             }
 
             console.log('Final names for search:', names);
+            
+            // Speciální případ: The Simpsons (tt0096697) má na Webshare obfuskovaný název
+            const imdbId = args.id.split(':')[0];
+            if (imdbId === 'tt0096697') {
+                console.log('Detected The Simpsons - adding obfuscated name');
+                names.push('Simps.novi');
+            }
 
             if (names.length === 0) {
                 console.log('No names found, returning empty');
@@ -638,12 +645,6 @@ builder.defineStreamHandler(async (args) => {
                         searchQueries.push(`${cleanName} ${seasonEp}`);
                         // Pouze epizoda E04 (pro seriály které nemají číslo sezóny)
                         searchQueries.push(`${cleanName} ${episodeOnly}`);
-                        
-                        // Speciální případ: Simpsonovi → Simps.novi (obfuskace)
-                        if (cleanName.toLowerCase() === 'simpsonovi') {
-                            searchQueries.push(`Simps.novi ${seasonEp}`);
-                            searchQueries.push(`Simps.novi ${episodeOnly}`);
-                        }
                     }
                 } else {
                     // Filmy nebo bez epizody
