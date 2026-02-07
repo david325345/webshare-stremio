@@ -6,7 +6,7 @@ const xml2js = require('xml2js');
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '3.5.0',
+    version: '3.6.1',
     name: 'Webshare Anime',
     description: 'Anime z Webshare.cz',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -840,7 +840,14 @@ builder.defineStreamHandler(async (args) => {
                     if (hasEpisodePattern) {
                         // Ujistíme se, že v názvu NENÍ jiné číslo sezóny
                         const hasWrongSeason = /S(\d+)E/i.test(nameUpper) && !exactPatterns.some(p => nameUpper.includes(p));
-                        if (hasWrongSeason) return false;  // Má špatnou sezónu, odmítneme
+                        if (hasWrongSeason) {
+                            // Debug - ukázat proč bylo odmítnuto
+                            const seasonMatch = nameUpper.match(/S(\d+)E/i);
+                            if (seasonMatch && filteredResults.indexOf(result) < 5) {
+                                console.log(`  REJECTED wrong season: ${result.name.substring(0, 60)} (has S${seasonMatch[1]}, need S${targetSeason})`);
+                            }
+                            return false;  // Má špatnou sezónu, odmítneme
+                        }
                         
                         // Kontrola názvu anime
                         const hasAnimeTitle = searchKeywords.some(keyword => {
@@ -990,7 +997,13 @@ builder.defineStreamHandler(async (args) => {
                        upper.includes('SK') || upper.includes('SLOVAK');
             };
             
-            // 1. RELEVANCE - kolik slov z názvu se shoduje (NEJDŮLEŽITĚJŠÍ)
+            // 1. JAZYK (CZ/SK má přednost) - NEJVYŠŠÍ PRIORITA
+            const aLang = hasLanguage(a.name);
+            const bLang = hasLanguage(b.name);
+            if (aLang && !bLang) return -1;
+            if (!aLang && bLang) return 1;
+            
+            // 2. RELEVANCE - kolik slov z názvu se shoduje
             const aScore = searchKeywords.reduce((score, keyword) => {
                 const words = keyword.split(/\s+/).filter(w => w.length >= 3);
                 const matches = words.filter(word => aName.includes(word)).length;
@@ -1005,16 +1018,10 @@ builder.defineStreamHandler(async (args) => {
             
             if (aScore !== bScore) return bScore - aScore;
             
-            // 2. KVALITA (4K > 1080P > 720P > 480P)
+            // 3. KVALITA (4K > 1080P > 720P > 480P)
             const aQuality = getQualityScore(a.name);
             const bQuality = getQualityScore(b.name);
             if (aQuality !== bQuality) return bQuality - aQuality;
-            
-            // 3. JAZYK (CZ/SK má přednost)
-            const aLang = hasLanguage(a.name);
-            const bLang = hasLanguage(b.name);
-            if (aLang && !bLang) return -1;
-            if (!aLang && bLang) return 1;
             
             // 4. ČÍSLO EPIZODY (E01, E02...)
             const aMatch = a.name.match(/[SE](\d+)/i);
