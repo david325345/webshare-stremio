@@ -6,7 +6,7 @@ const xml2js = require('xml2js');
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '2.4.0',
+    version: '2.4.1',
     name: 'Webshare Anime',
     description: 'Anime z Webshare.cz',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -785,6 +785,14 @@ builder.defineStreamHandler(async (args) => {
                 });
                 
                 console.log(`Filtered to ${filteredResults.length} results matching episode`);
+                
+                // Debug - vypíšeme první 5 souborů
+                if (filteredResults.length > 0) {
+                    console.log('First matched files:');
+                    filteredResults.slice(0, 5).forEach((f, i) => {
+                        console.log(`  ${i+1}. ${f.name}`);
+                    });
+                }
                 
                 // Pokud nic nenajdeme s názvem, zkusíme jen sezon+epizodu s kontrolou alespoň nejdelšího slova
                 if (filteredResults.length === 0) {
