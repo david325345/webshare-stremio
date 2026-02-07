@@ -6,7 +6,7 @@ const xml2js = require('xml2js');
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '3.12.0',
+    version: '3.13.0',
     name: 'Webshare Anime',
     description: 'Anime z Webshare.cz',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -197,10 +197,10 @@ async function getAnimeNamesFromTitle(title) {
             }
         }
         
-        // Hledáme na AniList
+        // Hledáme na AniList (TV i filmy)
         const searchQuery = `
         query ($search: String) {
-            Media(search: $search, type: ANIME, format: TV) {
+            Media(search: $search, type: ANIME) {
                 title {
                     romaji
                     english
@@ -506,7 +506,21 @@ builder.defineStreamHandler(async (args) => {
             
             if (tmdbNames.length > 0) {
                 console.log('TMDB found:', tmdbNames);
-                names = tmdbNames;
+                
+                // Kontrola zda je to japonský obsah (anime)
+                // Pokud ano, použijeme JEN anglický název (ne český)
+                const isJapaneseContent = tmdbResp.body?.tv_results?.[0]?.original_language === 'ja' || 
+                                         tmdbResp.body?.movie_results?.[0]?.original_language === 'ja';
+                
+                if (isJapaneseContent) {
+                    console.log('Detected Japanese content - using only English name from TMDB');
+                    // Poslední název je anglický (z EN query)
+                    const englishName = tmdbNames[tmdbNames.length - 1];
+                    names = [englishName];
+                } else {
+                    // Běžný obsah - použijeme všechny názvy (CZ + EN)
+                    names = tmdbNames;
+                }
                 
                 // Získáme rok z TMDB
                 try {
