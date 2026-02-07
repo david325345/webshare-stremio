@@ -6,7 +6,7 @@ const xml2js = require('xml2js');
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '2.3.0',
+    version: '2.3.1',
     name: 'Webshare Anime',
     description: 'Anime z Webshare.cz',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -602,7 +602,6 @@ builder.defineStreamHandler(async (args) => {
             console.log('Final names for search:', names);
             
             // Speciální případ: The Simpsons (tt0096697) má na Webshare obfuskovaný název
-            const imdbId = args.id.split(':')[0];
             if (imdbId === 'tt0096697') {
                 console.log('Detected The Simpsons - adding obfuscated name');
                 names.push('Simps.novi');
