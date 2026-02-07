@@ -6,7 +6,7 @@ const xml2js = require('xml2js');
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '3.4.0',
+    version: '3.4.3',
     name: 'Webshare Anime',
     description: 'Anime z Webshare.cz',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -716,14 +716,26 @@ builder.defineStreamHandler(async (args) => {
         if (args.type === 'movie' && cinemataYear) {
             console.log(`Filtering movies by year: ${cinemataYear} (±1 year tolerance)`);
             filteredResults = results.filter(result => {
-                // Hledáme rok v názvu (formát: 2009, (2011), .2015.)
-                const yearMatch = result.name.match(/[\(\.\s](\d{4})[\)\.\s]/);
-                if (yearMatch) {
-                    const fileYear = parseInt(yearMatch[1]);
-                    const yearDiff = Math.abs(fileYear - cinemataYear);
-                    if (yearDiff > 1) {
-                        console.log(`  Filtered out: ${result.name.substring(0, 50)} (year ${fileYear} vs ${cinemataYear})`);
-                        return false;
+                // Hledáme rok v názvu (formát: 2009, (2011), .2015., Passengers.2016)
+                // Regex hledá 4 číslice s oddělovačem PŘED (ale ne nutně PO)
+                const yearMatches = result.name.match(/[\(\.\s\-_](\d{4})(?!p)/gi);
+                if (yearMatches) {
+                    // Extrahujeme všechna čtyřciferná čísla
+                    const years = yearMatches.map(m => parseInt(m.match(/(\d{4})/)[1]));
+                    // Filtrujeme jen roky mezi 1920-2030 (ignoruje 1080p, 720p, atd.)
+                    const validYears = years.filter(y => y >= 1920 && y <= 2030);
+                    
+                    if (validYears.length > 0) {
+                        // Zkontrolujeme jestli nějaký rok sedí
+                        const hasMatchingYear = validYears.some(fileYear => {
+                            const yearDiff = Math.abs(fileYear - cinemataYear);
+                            return yearDiff <= 1;
+                        });
+                        
+                        if (!hasMatchingYear) {
+                            console.log(`  Filtered out: ${result.name.substring(0, 50)} (years ${validYears} vs ${cinemataYear})`);
+                            return false;
+                        }
                     }
                 }
                 return true;
