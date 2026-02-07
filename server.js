@@ -6,7 +6,7 @@ const xml2js = require('xml2js');
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '3.0.0',
+    version: '3.0.1',
     name: 'Webshare Anime',
     description: 'Anime z Webshare.cz',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -430,6 +430,7 @@ builder.defineStreamHandler(async (args) => {
 
         // Získáme všechny varianty názvů
         let searchQueries = [];
+        let cinemataYear = null; // Pro filtrování filmů podle roku
         
         if (args.id.startsWith('kitsu:')) {
             // Kitsu ID formát: kitsu:ID:episode (3 části, sezona je vždy 1)
@@ -498,7 +499,6 @@ builder.defineStreamHandler(async (args) => {
             const tmdbNames = await getTMDBNames(args.id.split(':')[0], args.type, args.config.tmdb_api_key);
             
             let names = [];
-            let cinemataYear = null;
             let primarySource = 'tmdb';
             
             if (tmdbNames.length > 0) {
