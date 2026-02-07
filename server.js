@@ -6,7 +6,7 @@ const xml2js = require('xml2js');
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '3.7.2',
+    version: '3.9.0',
     name: 'Webshare Anime',
     description: 'Anime z Webshare.cz',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -855,11 +855,26 @@ builder.defineStreamHandler(async (args) => {
                                 }
                                 return false;  // Má špatnou sezónu, odmítneme
                             }
+                        } else {
+                            // Soubor NEMÁ číslo sezóny (jen E01, - 01, atd.)
+                            // Akceptujeme JEN pokud hledáme sezónu 1!
+                            if (targetSeason !== 1) {
+                                if (filteredResults.indexOf(result) < 5) {
+                                    console.log(`  REJECTED no season number: ${result.name.substring(0, 60)} (need S${targetSeason}, file has no S)`);
+                                }
+                                return false;
+                            }
                         }
                         
-                        // Kontrola názvu anime
+                        // Kontrola názvu anime - musí obsahovat alespoň 20% slov
                         const hasAnimeTitle = searchKeywords.some(keyword => {
-                            if (keyword.length < 4) return true;
+                            if (keyword.length < 2) return true; // Jen úplně prázdné
+                            
+                            // Pro krátké keywords (JJK) kontrolovat přímo
+                            if (keyword.length <= 4) {
+                                return nameLower.includes(keyword);
+                            }
+                            
                             const words = keyword.split(/\s+/).filter(w => w.length > 3);
                             if (words.length === 0) return true;
                             const matchedWords = words.filter(word => nameLower.includes(word)).length;
@@ -940,6 +955,15 @@ builder.defineStreamHandler(async (args) => {
                                 if (fileSeason !== targetSeason) {
                                     if (debugCount < 5) {
                                         console.log(`  DEBUG: ${result.name.substring(0, 60)} - wrong season S${fileSeason} (need S${targetSeason})`);
+                                        debugCount++;
+                                    }
+                                    return false;
+                                }
+                            } else {
+                                // Soubor NEMÁ číslo sezóny - akceptujeme JEN pro sezónu 1
+                                if (targetSeason !== 1) {
+                                    if (debugCount < 5) {
+                                        console.log(`  DEBUG: ${result.name.substring(0, 60)} - no season (need S${targetSeason})`);
                                         debugCount++;
                                     }
                                     return false;
