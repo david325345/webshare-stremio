@@ -6,7 +6,7 @@ const xml2js = require('xml2js');
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '2.6.1',
+    version: '2.6.2',
     name: 'Webshare Anime',
     description: 'Anime z Webshare.cz',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -758,10 +758,13 @@ builder.defineStreamHandler(async (args) => {
                         // Jen číslo: " 03 ", "-03-", "-03.", "_03_", "[03]", "(03)"
                         new RegExp(`[\\s\\-_\\.\\[\\(]${String(targetEpisode).padStart(2, '0')}[\\s\\-_\\.\\]\\)]`, 'i'),
                         new RegExp(`[\\s\\-_\\.\\[\\(]${String(targetEpisode).padStart(2, '0')}$`, 'i'),
+                        // Na začátku souboru: "08 -", "08.", "08_"
+                        new RegExp(`^${String(targetEpisode).padStart(2, '0')}[\\s\\-_\\.]`, 'i'),
                         // Dvouciferná čísla bez nuly: " 15 ", "-15-", " 15." (pro epizody 10+)
                         ...(targetEpisode >= 10 ? [
                             new RegExp(`[\\s\\-_\\.\\[\\(]${targetEpisode}[\\s\\-_\\.\\]\\)]`, 'i'),
                             new RegExp(`[\\s\\-_\\.\\[\\(]${targetEpisode}$`, 'i'),
+                            new RegExp(`^${targetEpisode}[\\s\\-_\\.]`, 'i'),
                         ] : []),
                         // Varianta bez nuly: " 3 ", "-3-", "[3]" (pro epizody 1-9)
                         ...(targetEpisode < 10 ? [
@@ -824,9 +827,11 @@ builder.defineStreamHandler(async (args) => {
                                 new RegExp(`E${String(targetEpisode).padStart(2, '0')}[^0-9]`, 'i'),
                                 new RegExp(`E${String(targetEpisode).padStart(2, '0')}$`, 'i'),
                                 new RegExp(`[\\s\\-_\\.\\[\\(]${String(targetEpisode).padStart(2, '0')}[\\s\\-_\\.\\]\\)]`, 'i'),
+                                new RegExp(`^${String(targetEpisode).padStart(2, '0')}[\\s\\-_\\.]`, 'i'),
                                 // Dvouciferná čísla bez nuly: " 15 ", "-15-" (pro epizody 10+)
                                 ...(targetEpisode >= 10 ? [
                                     new RegExp(`[\\s\\-_\\.\\[\\(]${targetEpisode}[\\s\\-_\\.\\]\\)]`, 'i'),
+                                    new RegExp(`^${targetEpisode}[\\s\\-_\\.]`, 'i'),
                                 ] : []),
                             ];
                             
