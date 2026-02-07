@@ -6,7 +6,7 @@ const xml2js = require('xml2js');
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '3.13.0',
+    version: '3.13.1',
     name: 'Webshare Anime',
     description: 'Anime z Webshare.cz',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -346,16 +346,17 @@ async function getCinemetaName(type, id) {
 
 // Získání názvů z TMDB (české + anglické)
 async function getTMDBNames(imdbId, type, apiKey) {
-    // Pokud není API klíč, vrátíme prázdné pole
+    // Pokud není API klíč, vrátíme prázdný objekt
     if (!apiKey || apiKey.trim() === '') {
         console.log('TMDB API key not provided, skipping TMDB');
-        return [];
+        return { names: [], isJapanese: false };
     }
     
     try {
         console.log('Getting names from TMDB for', imdbId);
         
         const names = [];
+        let isJapanese = false;
         
         // Nejdřív zkusíme česky
         const urlCZ = `https://api.themoviedb.org/3/find/${imdbId}?api_key=${apiKey}&external_source=imdb_id&language=cs-CZ`;
@@ -373,13 +374,17 @@ async function getTMDBNames(imdbId, type, apiKey) {
             console.log('TMDB CZ results count:', results.length);
             if (results.length > 0) {
                 const media = results[0];
+                // Detekce japonského obsahu
+                if (media.original_language === 'ja') {
+                    isJapanese = true;
+                }
                 // Přidáme lokalizovaný název
                 if (media.name) names.push(media.name); // TV show
                 if (media.title) names.push(media.title); // Movie
             }
         } else if (respCZ.statusCode === 401) {
             console.log('TMDB API key is invalid (401 Unauthorized)');
-            return [];
+            return { names: [], isJapanese: false };
         }
         
         // Pak anglicky
@@ -406,11 +411,12 @@ async function getTMDBNames(imdbId, type, apiKey) {
         });
         
         console.log('TMDB names (latin only):', latinNames);
-        return latinNames.length > 0 ? latinNames : names; // Fallback pokud žádné latinské
+        const finalNames = latinNames.length > 0 ? latinNames : names;
+        return { names: finalNames, isJapanese };
     } catch (error) {
         console.error('Error getting TMDB names:', error.message);
     }
-    return [];
+    return { names: [], isJapanese: false };
 }
 
 builder.defineStreamHandler(async (args) => {
@@ -499,7 +505,9 @@ builder.defineStreamHandler(async (args) => {
 
             // Zkusíme TMDB jako PRIMÁRNÍ zdroj
             console.log('Trying TMDB as primary source...');
-            const tmdbNames = await getTMDBNames(args.id.split(':')[0], args.type, args.config.tmdb_api_key);
+            const tmdbResult = await getTMDBNames(args.id.split(':')[0], args.type, args.config.tmdb_api_key);
+            const tmdbNames = tmdbResult.names || [];
+            const isJapaneseContent = tmdbResult.isJapanese || false;
             
             let names = [];
             let primarySource = 'tmdb';
@@ -507,11 +515,7 @@ builder.defineStreamHandler(async (args) => {
             if (tmdbNames.length > 0) {
                 console.log('TMDB found:', tmdbNames);
                 
-                // Kontrola zda je to japonský obsah (anime)
-                // Pokud ano, použijeme JEN anglický název (ne český)
-                const isJapaneseContent = tmdbResp.body?.tv_results?.[0]?.original_language === 'ja' || 
-                                         tmdbResp.body?.movie_results?.[0]?.original_language === 'ja';
-                
+                // Pro japonský obsah (anime) použijeme JEN anglický název
                 if (isJapaneseContent) {
                     console.log('Detected Japanese content - using only English name from TMDB');
                     // Poslední název je anglický (z EN query)
