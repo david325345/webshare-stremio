@@ -6,7 +6,7 @@ const xml2js = require('xml2js');
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '3.16.0',
+    version: '3.16.1',
     name: 'Webshare Anime',
     description: 'Anime z Webshare.cz',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -586,10 +586,11 @@ builder.defineStreamHandler(async (args) => {
             // Pro anime - zkusíme AniList (JEN pro japonský obsah)
             let anilistNames = [];
             let anilistYear = null;
+            let searchName = ''; // Název použitý pro AniList search
             
             if (isJapaneseContent) {
                 // Pro anime používáme ANGLICKÝ název pro AniList search
-                const searchName = names.length > 1 ? names[names.length - 1] : names[0]; // Poslední = anglický
+                searchName = names.length > 1 ? names[names.length - 1] : names[0]; // Poslední = anglický
                 console.log('Checking if anime on AniList with name:', searchName);
                 
                 const anilistResult = await getAnimeNamesFromTitle(searchName);
