@@ -6,7 +6,7 @@ const xml2js = require('xml2js');
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '2.3.2',
+    version: '2.4.0',
     name: 'Webshare Anime',
     description: 'Anime z Webshare.cz',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -733,7 +733,10 @@ builder.defineStreamHandler(async (args) => {
                             // Normalizace slov z keywords pro porovnání bez diakritiky
                             const normalizedWords = words.map(w => normalizeChars(w));
                             const matchedWords = normalizedWords.filter(word => nameNormalized.includes(word)).length;
-                            const minWords = Math.max(1, Math.ceil(words.length * 0.2));
+                            
+                            // Pro běžné seriály: vyžadujeme VŠECHNA slova (100%)
+                            // Pro anime: stačí 20% (anime mají různé názvy)
+                            const minWords = words.length; // 100% - všechna slova
                             
                             // Debug pro první 3 soubory
                             if (filteredResults.indexOf(result) < 3) {
@@ -984,10 +987,12 @@ builder.defineStreamHandler(async (args) => {
                             url: ''
                         }] : undefined
                     };
+                } else {
+                    console.log(`No link available for file: ${file.name}`);
                 }
                 return null;
             } catch (error) {
-                console.error('Error getting link:', error.message);
+                console.error(`Error getting link for ${file.name}:`, error.message);
                 return null;
             }
         });
