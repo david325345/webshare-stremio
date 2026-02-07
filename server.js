@@ -6,7 +6,7 @@ const xml2js = require('xml2js');
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '2.2.2',
+    version: '2.3.0',
     name: 'Webshare Anime',
     description: 'Anime z Webshare.cz',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -680,6 +680,11 @@ builder.defineStreamHandler(async (args) => {
             return q.replace(/S\d+E\d+/gi, '').trim().toLowerCase();
         });
         console.log('Search keywords for matching:', searchKeywords);
+        
+        // Pomocná funkce pro normalizaci českých znaků
+        const normalizeChars = (str) => {
+            return str.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+        };
 
         // Pokud hledáme konkrétní epizodu, filtrujeme jen tu
         let filteredResults = results;
@@ -704,6 +709,7 @@ builder.defineStreamHandler(async (args) => {
                 filteredResults = results.filter(result => {
                     const nameUpper = result.name.toUpperCase();
                     const nameLower = result.name.toLowerCase();
+                    const nameNormalized = normalizeChars(nameLower);
                     
                     // 1) Přesné patterny s číslem sezóny a epizody
                     const exactPatterns = [
@@ -723,13 +729,16 @@ builder.defineStreamHandler(async (args) => {
                             if (keyword.length < 4) return true;
                             const words = keyword.split(/\s+/).filter(w => w.length > 3);
                             if (words.length === 0) return true;
-                            const matchedWords = words.filter(word => nameLower.includes(word)).length;
+                            
+                            // Normalizace slov z keywords pro porovnání bez diakritiky
+                            const normalizedWords = words.map(w => normalizeChars(w));
+                            const matchedWords = normalizedWords.filter(word => nameNormalized.includes(word)).length;
                             const minWords = Math.max(1, Math.ceil(words.length * 0.2));
                             
                             // Debug pro první 3 soubory
                             if (filteredResults.indexOf(result) < 3) {
                                 console.log(`  File: ${result.name.substring(0, 50)}`);
-                                console.log(`  Keyword: "${keyword}", Words: ${words}, Matched: ${matchedWords}/${minWords}`);
+                                console.log(`  Keyword: "${keyword}", Words: ${normalizedWords}, Matched: ${matchedWords}/${minWords}`);
                             }
                             
                             return matchedWords >= minWords;
@@ -780,6 +789,7 @@ builder.defineStreamHandler(async (args) => {
                     filteredResults = results.filter(result => {
                         const nameUpper = result.name.toUpperCase();
                         const nameLower = result.name.toLowerCase();
+                        const nameNormalized = normalizeChars(nameLower);
                         
                         // Přesné patterny se sezónou
                         const exactPatterns = [
@@ -812,9 +822,10 @@ builder.defineStreamHandler(async (args) => {
                             const words = keyword.split(/\s+/).filter(w => w.length >= 4);
                             if (words.length === 0) return false;
                             
-                            // Najdeme nejdelší slovo
+                            // Najdeme nejdelší slovo a normalizujeme
                             const longestWord = words.reduce((a, b) => a.length > b.length ? a : b);
-                            return nameLower.includes(longestWord);
+                            const normalizedLongest = normalizeChars(longestWord);
+                            return nameNormalized.includes(normalizedLongest);
                         });
                         
                         return hasLongestWord;
