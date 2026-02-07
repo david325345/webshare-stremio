@@ -6,7 +6,7 @@ const xml2js = require('xml2js');
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '3.19.1',
+    version: '3.21.0',
     name: 'Webshare Anime',
     description: 'Anime z Webshare.cz',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -199,20 +199,22 @@ async function getAnimeNamesFromTitle(title) {
             }
         }
         
-        // Hledáme na AniList (TV i filmy) - seřazené podle popularity
+        // Hledáme na AniList (TV i filmy) - vrátíme TOP 10 pro better matching
         const searchQuery = `
         query ($search: String) {
-            Media(search: $search, type: ANIME, sort: POPULARITY_DESC) {
-                title {
-                    romaji
-                    english
-                    native
+            Page(page: 1, perPage: 10) {
+                media(search: $search, type: ANIME, sort: SEARCH_MATCH) {
+                    title {
+                        romaji
+                        english
+                        native
+                    }
+                    synonyms
+                    startDate {
+                        year
+                    }
+                    format
                 }
-                synonyms
-                startDate {
-                    year
-                }
-                format
             }
         }`;
         
@@ -229,24 +231,63 @@ async function getAnimeNamesFromTitle(title) {
             
             console.log('AniList response status:', searchResp.statusCode);
             
-            if (searchResp.body && searchResp.body.data && searchResp.body.data.Media) {
-                const media = searchResp.body.data.Media;
-                const names = [];
+            if (searchResp.body && searchResp.body.data && searchResp.body.data.Page) {
+                const mediaList = searchResp.body.data.Page.media || [];
                 
-                if (media.title.romaji) names.push(media.title.romaji);
-                if (media.title.english) names.push(media.title.english);
-                if (media.title.native) names.push(media.title.native);
-                if (media.synonyms) names.push(...media.synonyms);
+                if (mediaList.length === 0) {
+                    console.log('No results from AniList');
+                    continue;
+                }
                 
-                console.log('Found on AniList:', names);
-                console.log('AniList year:', media.startDate?.year || 'unknown');
-                console.log('=== getAnimeNamesFromTitle SUCCESS ===');
+                // Najdeme nejlepší match podle similarity
+                let bestMatch = null;
+                let bestSimilarity = 0;
                 
-                // Vrátíme názvy + rok
-                return {
-                    names: [...new Set(names)],
-                    year: media.startDate?.year || null
-                };
+                for (const media of mediaList) {
+                    const names = [];
+                    if (media.title.romaji) names.push(media.title.romaji);
+                    if (media.title.english) names.push(media.title.english);
+                    if (media.synonyms) names.push(...media.synonyms);
+                    
+                    // Spočítáme similarity s search termem
+                    const searchLower = name.toLowerCase();
+                    const searchWords = searchLower.split(/\s+/).filter(w => w.length > 0);
+                    
+                    let maxSimilarity = 0;
+                    for (const anilistName of names) {
+                        const anilistLower = anilistName.toLowerCase();
+                        const matchingWords = searchWords.filter(word => anilistLower.includes(word)).length;
+                        const similarity = searchWords.length > 0 ? matchingWords / searchWords.length : 0;
+                        if (similarity > maxSimilarity) maxSimilarity = similarity;
+                    }
+                    
+                    if (maxSimilarity > bestSimilarity) {
+                        bestSimilarity = maxSimilarity;
+                        bestMatch = media;
+                    }
+                }
+                
+                // Použijeme nejlepší match pokud má alespoň nějakou shodu
+                if (bestMatch && bestSimilarity > 0) {
+                    const media = bestMatch;
+                    const names = [];
+                    
+                    if (media.title.romaji) names.push(media.title.romaji);
+                    if (media.title.english) names.push(media.title.english);
+                    if (media.title.native) names.push(media.title.native);
+                    if (media.synonyms) names.push(...media.synonyms);
+                    
+                    console.log('Found on AniList:', names);
+                    console.log('AniList year:', media.startDate?.year || 'unknown');
+                    console.log('Best match similarity:', bestSimilarity.toFixed(2));
+                    console.log('=== getAnimeNamesFromTitle SUCCESS ===');
+                    
+                    // Vrátíme názvy + rok
+                    return {
+                        names: [...new Set(names)],
+                        year: media.startDate?.year || null
+                    };
+                }
             }
         }
         
@@ -952,11 +993,11 @@ builder.defineStreamHandler(async (args) => {
                             }
                         }
                         
-                        // Kontrola názvu anime - musí obsahovat alespoň 20% slov
-                        const hasAnimeTitle = searchKeywords.some(keyword => {
-                            if (keyword.length < 2) return true; // Jen úplně prázdné
+                        // Kontrola názvu - vyžadujeme VŠECHNA slova (100%)
+                        const hasTitle = searchKeywords.some(keyword => {
+                            if (keyword.length < 2) return true;
                             
-                            // Pro krátké keywords (JJK) kontrolovat přímo
+                            // Pro krátké keywords kontrolovat přímo
                             if (keyword.length <= 4) {
                                 return nameLower.includes(keyword);
                             }
@@ -964,10 +1005,11 @@ builder.defineStreamHandler(async (args) => {
                             const words = keyword.split(/\s+/).filter(w => w.length > 3);
                             if (words.length === 0) return true;
                             const matchedWords = words.filter(word => nameLower.includes(word)).length;
-                            const minWords = Math.max(1, Math.ceil(words.length * 0.2));
-                            return matchedWords >= minWords;
+                            
+                            // Vyžadujeme VŠECHNA slova (100%)
+                            return matchedWords === words.length;
                         });
-                        return hasAnimeTitle;
+                        return hasTitle;
                     }
                     
                     return false;
