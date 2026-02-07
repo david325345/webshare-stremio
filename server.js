@@ -6,7 +6,7 @@ const xml2js = require('xml2js');
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '2.7.2',
+    version: '2.8.0',
     name: 'Webshare Anime',
     description: 'Anime z Webshare.cz',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -493,7 +493,7 @@ builder.defineStreamHandler(async (args) => {
 
             console.log('IMDb ID detected, checking if it is anime on AniList...');
 
-            // Nejdřív získáme název z Cinemeta
+            // Nejdřív získáme název z Cinemeta (pro kontrolu roku a jako záloha)
             const cinemataNames = await getCinemetaName(args.type, args.id);
             
             if (cinemataNames.length === 0) {
@@ -557,7 +557,7 @@ builder.defineStreamHandler(async (args) => {
                 
                 // Pokud se názvy shodují aspoň z 30% A roky sedí, je to pravděpodobně správné anime
                 if (bestSimilarity >= 0.3 && yearMatch) {
-                    // Je to anime! Použijeme AniList názvy (NE TMDB)
+                    // Je to anime! Použijeme AniList názvy (NE TMDB, NE Cinemeta)
                     console.log('Found anime on AniList - using AniList names only');
                     
                     const latinNames = names.filter(name => {
@@ -570,16 +570,23 @@ builder.defineStreamHandler(async (args) => {
                     if (latinNames.length > 0) {
                         names = latinNames;
                     } else {
-                        // Žádné latinské názvy, použijeme Cinemeta
-                        console.log('No latin names found, using Cinemeta');
-                        names = cinemataNames;
+                        // Žádné latinské názvy, použijeme TMDB nebo Cinemeta
+                        console.log('No latin names found, trying TMDB');
+                        const tmdbNames = await getTMDBNames(args.id.split(':')[0], args.type, args.config.tmdb_api_key);
+                        if (tmdbNames.length > 0) {
+                            console.log('Using TMDB names (including Czech)');
+                            names = tmdbNames;
+                        } else {
+                            console.log('TMDB failed, using Cinemeta');
+                            names = cinemataNames;
+                        }
                     }
                 } else {
-                    // Názvy se příliš neshodují - není to anime, zkusíme TMDB
+                    // Názvy se příliš neshodují NEBO roky nesedí - není to anime
                     console.log('AniList result too different from Cinemeta - trying TMDB for non-anime');
                     const tmdbNames = await getTMDBNames(args.id.split(':')[0], args.type, args.config.tmdb_api_key);
                     if (tmdbNames.length > 0) {
-                        console.log('Using TMDB names (including Czech)');
+                        console.log('Using TMDB names (including Czech) - Cinemeta ignored');
                         names = tmdbNames;
                     } else {
                         console.log('TMDB failed, using Cinemeta name only');
@@ -587,14 +594,14 @@ builder.defineStreamHandler(async (args) => {
                     }
                 }
             } else {
-                // Není to anime na AniList, zkusíme TMDB pro běžné seriály/filmy
-                console.log('Not found on AniList, trying TMDB for non-anime');
+                // Není to anime na AniList, zkusíme TMDB jako PRIMÁRNÍ zdroj
+                console.log('Not found on AniList, trying TMDB as primary source');
                 const tmdbNames = await getTMDBNames(args.id.split(':')[0], args.type, args.config.tmdb_api_key);
                 if (tmdbNames.length > 0) {
-                    console.log('Using TMDB names (including Czech)');
+                    console.log('Using TMDB names (including Czech) - Cinemeta ignored');
                     names = tmdbNames;
                 } else {
-                    console.log('TMDB failed, using Cinemeta name only');
+                    console.log('TMDB failed, using Cinemeta as fallback');
                     names = cinemataNames;
                 }
             }
