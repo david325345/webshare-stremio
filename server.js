@@ -6,7 +6,7 @@ const xml2js = require('xml2js');
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '3.19.0',
+    version: '3.19.1',
     name: 'Webshare Anime',
     description: 'Anime z Webshare.cz',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -929,8 +929,8 @@ builder.defineStreamHandler(async (args) => {
                             fileSeason = parseInt(seasonMatch[1]);
                         }
                         
-                        // Pattern 3: "Part 2", "P2", "Pt 2"
-                        const partMatch = nameUpper.match(/(?:PART|P|PT)\.?\s*(\d+)/i);
+                        // Pattern 3: "Part 2", "P2", "Pt 2" (musí být word boundary před P)
+                        const partMatch = nameUpper.match(/\b(?:PART|PT)\.?\s*(\d+)/i);
                         if (partMatch && !fileSeason) { // Jen pokud jsme nenašli Season
                             fileSeason = parseInt(partMatch[1]);
                         }
@@ -1045,7 +1045,7 @@ builder.defineStreamHandler(async (args) => {
                                               nameUpper.match(/SEASON\s+(\d+)/i);
                             if (seasonMatch) fileSeason = parseInt(seasonMatch[1]);
                             
-                            const partMatch = nameUpper.match(/(?:PART|P|PT)\.?\s*(\d+)/i);
+                            const partMatch = nameUpper.match(/\b(?:PART|PT)\.?\s*(\d+)/i);
                             if (partMatch && !fileSeason) fileSeason = parseInt(partMatch[1]);
                             
                             if (fileSeason && fileSeason !== targetSeason) {
