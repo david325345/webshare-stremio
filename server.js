@@ -6,7 +6,7 @@ const xml2js = require('xml2js');
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '3.9.0',
+    version: '3.10.0',
     name: 'Webshare Anime',
     description: 'Anime z Webshare.cz',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -834,10 +834,11 @@ builder.defineStreamHandler(async (args) => {
                             new RegExp(`-\\s${targetEpisode}\\.`, 'i'),
                         ] : []),
                         // Jednociferná čísla pro 1-9: " 3 ", "-3-", "[3]", ".3."
+                        // KRITICKÉ: Musí mít (?!\d) aby " 1 " nematchovalo " 10 "
                         ...(targetEpisode < 10 ? [
-                            new RegExp(`[\\s\\-_\\.\\[\\(]${targetEpisode}[\\s\\-_\\.\\]\\)]`, 'i'),
-                            new RegExp(`[\\s\\-_\\.\\[\\(]${targetEpisode}$`, 'i'),
-                            new RegExp(`-\\s${targetEpisode}\\.`, 'i'),
+                            new RegExp(`[\\s\\-_\\.\\[\\(]${targetEpisode}(?!\\d)[\\s\\-_\\.\\]\\)]`, 'i'),
+                            new RegExp(`[\\s\\-_\\.\\[\\(]${targetEpisode}(?!\\d)$`, 'i'),
+                            new RegExp(`-\\s${targetEpisode}(?!\\d)\\.`, 'i'),
                         ] : [])
                     ];
                     
@@ -932,9 +933,10 @@ builder.defineStreamHandler(async (args) => {
                                     new RegExp(`-\\s${targetEpisode}\\.`, 'i'),
                                 ] : []),
                                 // Jednociferná čísla pro 1-9
+                                // KRITICKÉ: (?!\d) aby " 1 " nematchovalo " 10 "
                                 ...(targetEpisode < 10 ? [
-                                    new RegExp(`[\\s\\-_\\.\\[\\(]${targetEpisode}[\\s\\-_\\.\\]\\)]`, 'i'),
-                                    new RegExp(`-\\s${targetEpisode}\\.`, 'i'),
+                                    new RegExp(`[\\s\\-_\\.\\[\\(]${targetEpisode}(?!\\d)[\\s\\-_\\.\\]\\)]`, 'i'),
+                                    new RegExp(`-\\s${targetEpisode}(?!\\d)\\.`, 'i'),
                                 ] : []),
                             ];
                             
@@ -1007,7 +1009,39 @@ builder.defineStreamHandler(async (args) => {
                     }
                 }
             } else {
-                console.log('No episode number to filter - showing all results');
+                // Nemáme číslo epizody - filtrujeme jen podle názvu
+                console.log('No episode number - filtering by title only');
+                
+                filteredResults = results.filter(result => {
+                    const nameLower = result.name.toLowerCase();
+                    const nameNormalized = normalizeChars(nameLower);
+                    
+                    // Kontrola že obsahuje VŠECHNA slova z názvu
+                    const hasTitle = searchKeywords.some(keyword => {
+                        if (keyword.length < 2) return true;
+                        
+                        // Pro krátké keywords kontrolovat přímo
+                        if (keyword.length <= 4) {
+                            return nameLower.includes(keyword);
+                        }
+                        
+                        // Odstranění "the " ze začátku
+                        const cleanKeyword = keyword.replace(/^the\s+/i, '');
+                        const words = cleanKeyword.split(/\s+/);
+                        if (words.length === 0) return true;
+                        
+                        // Normalizace slov
+                        const normalizedWords = words.map(w => normalizeChars(w));
+                        const matchedWords = normalizedWords.filter(word => nameNormalized.includes(word)).length;
+                        
+                        // Vyžadujeme VŠECHNA slova (100%)
+                        return matchedWords === words.length;
+                    });
+                    
+                    return hasTitle;
+                });
+                
+                console.log(`Filtered by title to ${filteredResults.length} results`);
             }
         }
 
