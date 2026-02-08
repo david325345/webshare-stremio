@@ -6,7 +6,7 @@ const xml2js = require('xml2js');
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '5.3.2', // Added debug logging for background URL
+    version: '5.3.3', // Use thumbnail as background instead of placeholder
     name: 'Webshare Anime',
     description: 'Anime a filmy z Webshare.cz s vyhledáváním',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -529,14 +529,12 @@ async function handleCatalogRequest(args) {
             const placeholderUrl = `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:10000'}/placeholder.svg`;
             const posterUrl = file.img || placeholderUrl;
             
-            console.log(`Background URL: ${placeholderUrl}`); // Debug
-            
             return {
                 id: `ws:${idEncoded}`,
                 type: isSeries ? 'series' : 'movie',
                 name: file.name,
                 poster: posterUrl,
-                background: placeholderUrl, // VŽDY placeholder na pozadí
+                background: posterUrl, // Použít thumbnail jako background
                 posterShape: 'poster',
                 description: `📦 ${formatSize(file.size)}\n⬆️ ${file.positive_votes} 👍 | ${file.negative_votes} 👎`
             };
@@ -577,7 +575,7 @@ async function handleMetaRequest(args) {
                 type: args.type,
                 name: idData.name,
                 poster: posterUrl,
-                background: placeholderUrl, // VŽDY placeholder na pozadí
+                background: posterUrl, // Použít thumbnail jako background
                 description: `📦 ${formatSize(idData.size)}\n⬆️ ${idData.votes.up} 👍 | ${idData.votes.down} 👎\n\nKlikněte pro přehrání`
             }
         };
