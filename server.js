@@ -6,7 +6,7 @@ const xml2js = require('xml2js');
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '5.1.6', // Added debug logging for search API
+    version: '5.1.7', // Added debug for extra params parsing
     name: 'Webshare Anime',
     description: 'Anime a filmy z Webshare.cz s vyhledáváním',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -1906,6 +1906,7 @@ app.get('/:userConfig/catalog/:type/:id/:extra.json', async (req, res) => {
         // Parse extra parametry z URL path (formát: search=frieren)
         let extraParams = {};
         if (req.params.extra) {
+            console.log('DEBUG: req.params.extra =', req.params.extra);
             const pairs = req.params.extra.split('&');
             for (const pair of pairs) {
                 const [key, value] = pair.split('=');
@@ -1913,10 +1914,12 @@ app.get('/:userConfig/catalog/:type/:id/:extra.json', async (req, res) => {
                     extraParams[key] = decodeURIComponent(value);
                 }
             }
+            console.log('DEBUG: extraParams =', extraParams);
         }
         
         // Merge s query params
         const extra = { ...extraParams, ...req.query };
+        console.log('DEBUG: final extra =', extra);
         
         const args = {
             type: req.params.type,
