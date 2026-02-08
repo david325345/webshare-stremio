@@ -6,7 +6,7 @@ const xml2js = require('xml2js');
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '5.1.0', // Added optional search catalog toggle
+    version: '5.1.1', // Fixed catalog/meta handlers for personal URLs
     name: 'Webshare Anime',
     description: 'Anime a filmy z Webshare.cz s vyhledáváním',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -474,7 +474,7 @@ async function getTMDBNames(imdbId, type, apiKey) {
 }
 
 // ========== CATALOG HANDLER ==========
-builder.defineCatalogHandler(async (args) => {
+async function handleCatalogRequest(args) {
     console.log('=== CATALOG REQUEST ===');
     console.log('Type:', args.type);
     console.log('ID:', args.id);
@@ -531,10 +531,13 @@ builder.defineCatalogHandler(async (args) => {
         console.error('Catalog error:', error.message);
         return { metas: [] };
     }
-});
+}
+
+// Registrujeme catalog handler
+builder.defineCatalogHandler(handleCatalogRequest);
 
 // ========== META HANDLER ==========
-builder.defineMetaHandler(async (args) => {
+async function handleMetaRequest(args) {
     console.log('=== META REQUEST ===');
     console.log('Type:', args.type);
     console.log('ID:', args.id);
@@ -570,7 +573,10 @@ builder.defineMetaHandler(async (args) => {
         console.error('Meta error:', error.message);
         return { meta: null };
     }
-});
+}
+
+// Registrujeme meta handler
+builder.defineMetaHandler(handleMetaRequest);
 
 // Stream handler funkce - použita jak builderem tak personal routes
 async function handleStreamRequest(args) {
@@ -1871,9 +1877,8 @@ app.get('/:userConfig/catalog/:type/:id.json', async (req, res) => {
         console.log('Catalog:', args.id);
         console.log('Search:', args.extra.search);
         
-        // Zavoláme catalog handler
-        const catalogInterface = builder.getInterface();
-        const result = await catalogInterface.get({ resource: 'catalog', type: args.type, id: args.id, extra: args.extra, config: args.config });
+        // Zavoláme catalog handler přímo
+        const result = await handleCatalogRequest(args);
         
         res.setHeader('Content-Type', 'application/json');
         res.setHeader('Access-Control-Allow-Origin', '*');
@@ -1901,9 +1906,8 @@ app.get('/:userConfig/meta/:type/:id.json', async (req, res) => {
         console.log('User:', config.username);
         console.log('ID:', args.id);
         
-        // Zavoláme meta handler
-        const metaInterface = builder.getInterface();
-        const result = await metaInterface.get({ resource: 'meta', type: args.type, id: args.id, config: args.config });
+        // Zavoláme meta handler přímo
+        const result = await handleMetaRequest(args);
         
         res.setHeader('Content-Type', 'application/json');
         res.setHeader('Access-Control-Allow-Origin', '*');
