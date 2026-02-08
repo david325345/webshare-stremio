@@ -6,7 +6,7 @@ const xml2js = require('xml2js');
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '3.23.1',
+    version: '4.0.0', // Personal URL system
     name: 'Webshare Anime',
     description: 'Anime z Webshare.cz',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -1536,9 +1536,9 @@ app.get('/', (req, res) => {
     <h1>🎌 Webshare Anime Addon</h1>
     <p>Stremio addon pro anime a seriály z Webshare.cz</p>
     
-    <h2>📥 Instalace</h2>
+    <h2>📥 Vytvoření osobního addonu</h2>
     <div class="note">
-        Vyplňte své přihlašovací údaje a klikněte na tlačítko pro instalaci.
+        Vyplňte své údaje a vygenerujte si osobní instalační link s vašimi credentials.
     </div>
     
     <form id="installForm">
@@ -1557,20 +1557,28 @@ app.get('/', (req, res) => {
             <input type="text" id="tmdb" name="tmdb" placeholder="79171fa24cf58cc89b8df8b165f0bcd4">
         </div>
         
-        <button type="submit" class="install-btn" id="installBtn">
-            🚀 Nainstalovat do Stremio
+        <button type="submit" class="install-btn">
+            🔗 Vygenerovat instalační link
         </button>
     </form>
     
     <div id="installLinkContainer" style="display: none; margin-top: 20px;">
         <div class="note">
-            <strong>📋 Instalační link:</strong>
-            <div style="margin-top: 10px; word-break: break-all; background: #0d1b2a; padding: 10px; border-radius: 5px; font-family: monospace; font-size: 12px;">
+            <strong>✅ Váš osobní addon je připraven!</strong>
+            <div style="margin-top: 10px; word-break: break-all; background: #0d1b2a; padding: 10px; border-radius: 5px; font-family: monospace; font-size: 11px;">
                 <span id="installLinkDisplay"></span>
             </div>
-            <button onclick="copyInstallLink()" style="margin-top: 10px; padding: 8px 15px; background: #00d9ff; color: #1a1a2e; border: none; border-radius: 5px; cursor: pointer; font-weight: bold;">
-                📋 Zkopírovat link
-            </button>
+            <div style="margin-top: 10px;">
+                <button onclick="copyInstallLink()" style="padding: 10px 20px; background: #00d9ff; color: #1a1a2e; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; margin-right: 10px;">
+                    📋 Zkopírovat
+                </button>
+                <button onclick="installNow()" style="padding: 10px 20px; background: #7b2cbf; color: white; border: none; border-radius: 5px; cursor: pointer; font-weight: bold;">
+                    🚀 Nainstalovat
+                </button>
+            </div>
+        </div>
+        <div class="note" style="margin-top: 10px; background: #2d1b00; border-left-color: #ff9500;">
+            <strong>⚠️ Bezpečnost:</strong> Tento link obsahuje vaše heslo. Nesdílejte ho s nikým!
         </div>
     </div>
     
@@ -1595,8 +1603,11 @@ app.get('/', (req, res) => {
     
     <script>
         const form = document.getElementById('installForm');
-        const btn = document.getElementById('installBtn');
         let currentInstallUrl = '';
+        
+        function installNow() {
+            window.location.href = currentInstallUrl;
+        }
         
         function copyInstallLink() {
             navigator.clipboard.writeText(currentInstallUrl).then(() => {
@@ -1628,27 +1639,25 @@ app.get('/', (req, res) => {
             // Vytvoříme config objekt
             const config = {
                 username: username,
-                password: password
+                password: password,
+                tmdb_api_key: tmdb || ''
             };
             
-            // Přidáme TMDB klíč pokud je vyplněn
-            if (tmdb) {
-                config.tmdb_api_key = tmdb;
-            }
+            // Base64 encode config pro personal URL
+            const configB64 = btoa(JSON.stringify(config));
             
-            // URL encode config
-            const configEncoded = encodeURIComponent(JSON.stringify(config));
-            
-            // Vytvoříme Stremio install URL
-            const installUrl = \`stremio://\${window.location.host}/manifest.json?config=\${configEncoded}\`;
+            // Vytvoříme PERSONAL Stremio install URL s credentials v path
+            const installUrl = \`stremio://\${window.location.host}/\${configB64}/manifest.json\`;
             currentInstallUrl = installUrl;
             
             // Zobrazíme link
             document.getElementById('installLinkDisplay').textContent = installUrl;
             document.getElementById('installLinkContainer').style.display = 'block';
             
-            // Přesměrujeme
-            window.location.href = installUrl;
+            // Scrollujeme k linku
+            document.getElementById('installLinkContainer').scrollIntoView({ behavior: 'smooth' });
+            
+            // NE-přesměrováváme automaticky, uživatel si může vybrat
         });
     </script>
 </body>
@@ -1656,7 +1665,75 @@ app.get('/', (req, res) => {
     `);
 });
 
-// Stremio addon routes
+// Personal manifest route - každý uživatel má vlastní URL s embedded credentials
+app.get('/:userConfig/manifest.json', (req, res) => {
+    try {
+        const configB64 = req.params.userConfig;
+        
+        // Dekódujeme config z base64
+        const configJson = Buffer.from(configB64, 'base64').toString('utf8');
+        const config = JSON.parse(configJson);
+        
+        console.log(`📦 Personal manifest request for user: ${config.username}`);
+        
+        // Vytvoříme personal manifest BEZ config fields
+        const personalManifest = {
+            ...manifest,
+            id: `${manifest.id}.${configB64.substring(0, 8)}`,
+            name: `${manifest.name} (${config.username})`,
+            config: undefined, // Odstraníme config - není potřeba
+            behaviorHints: {
+                ...manifest.behaviorHints,
+                configurable: false,
+                configurationRequired: false
+            }
+        };
+        
+        res.setHeader('Content-Type', 'application/json');
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        res.json(personalManifest);
+    } catch (error) {
+        console.error('Personal manifest error:', error.message);
+        res.status(400).json({ error: 'Invalid config URL' });
+    }
+});
+
+// Personal stream handler - používá config z URL path
+app.get('/:userConfig/stream/:type/:id.json', async (req, res) => {
+    try {
+        const configB64 = req.params.userConfig;
+        
+        // Dekódujeme config
+        const configJson = Buffer.from(configB64, 'base64').toString('utf8');
+        const config = JSON.parse(configJson);
+        
+        // Vytvoříme args pro stream handler
+        const args = {
+            type: req.params.type,
+            id: req.params.id,
+            extra: {},
+            config: config
+        };
+        
+        console.log('=== PERSONAL STREAM REQUEST ===');
+        console.log('User:', config.username);
+        console.log('Type:', args.type);
+        console.log('ID:', args.id);
+        
+        // Zavoláme builder stream handler
+        const streamHandler = builder.getInterface().handlers.stream;
+        const result = await streamHandler(args);
+        
+        res.setHeader('Content-Type', 'application/json');
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        res.json(result);
+    } catch (error) {
+        console.error('Personal stream error:', error.message);
+        res.status(500).json({ streams: [] });
+    }
+});
+
+// Stremio addon routes (default - vyžaduje config)
 const addonRouter = getRouter(builder.getInterface());
 app.use(addonRouter);
 
