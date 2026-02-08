@@ -6,7 +6,7 @@ const xml2js = require('xml2js');
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '5.3.3', // Use thumbnail as background instead of placeholder
+    version: '5.1.5', // Fixed Express route syntax - two routes instead of optional param
     name: 'Webshare Anime',
     description: 'Anime a filmy z Webshare.cz s vyhledáváním',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -516,25 +516,11 @@ async function handleCatalogRequest(args) {
             const nameLower = file.name.toLowerCase();
             const isSeries = /s\d{2}e\d{2}|season|episode|e\d{2}/i.test(file.name);
             
-            // Vytvoříme ID s embedded img URL pro meta handler
-            const idData = {
-                ident: file.ident,
-                img: file.img,
-                name: file.name,
-                size: file.size,
-                votes: { up: file.positive_votes, down: file.negative_votes }
-            };
-            const idEncoded = Buffer.from(JSON.stringify(idData)).toString('base64');
-            
-            const placeholderUrl = `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:10000'}/placeholder.svg`;
-            const posterUrl = file.img || placeholderUrl;
-            
             return {
-                id: `ws:${idEncoded}`,
+                id: `ws:${file.ident}`,
                 type: isSeries ? 'series' : 'movie',
                 name: file.name,
-                poster: posterUrl,
-                background: posterUrl, // Použít thumbnail jako background
+                poster: file.img || `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:10000'}/placeholder.svg`,
                 posterShape: 'poster',
                 description: `📦 ${formatSize(file.size)}\n⬆️ ${file.positive_votes} 👍 | ${file.negative_votes} 👎`
             };
@@ -562,21 +548,16 @@ async function handleMetaRequest(args) {
     }
     
     try {
-        // Dekódujeme embedded data z ID
-        const encoded = args.id.replace('ws:', '');
-        const idData = JSON.parse(Buffer.from(encoded, 'base64').toString('utf8'));
-        
-        const placeholderUrl = `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:10000'}/placeholder.svg`;
-        const posterUrl = idData.img || placeholderUrl;
+        // ID je ws:ident - nemáme přístup k detailům souboru
+        const ident = args.id.replace('ws:', '');
         
         return {
             meta: {
                 id: args.id,
                 type: args.type,
-                name: idData.name,
-                poster: posterUrl,
-                background: posterUrl, // Použít thumbnail jako background
-                description: `📦 ${formatSize(idData.size)}\n⬆️ ${idData.votes.up} 👍 | ${idData.votes.down} 👎\n\nKlikněte pro přehrání`
+                name: `Webshare soubor ${ident}`,
+                poster: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:10000'}/placeholder.svg`,
+                description: 'Klikněte pro přehrání'
             }
         };
     } catch (error) {
@@ -609,12 +590,8 @@ async function handleStreamRequest(args) {
         
         // SPECIÁLNÍ: Přímý Webshare soubor z katalogu
         if (args.id.startsWith('ws:')) {
-            // Dekódujeme ID
-            const encoded = args.id.replace('ws:', '');
-            const idData = JSON.parse(Buffer.from(encoded, 'base64').toString('utf8'));
-            const ident = idData.ident;
-            
-            console.log('Direct Webshare file:', idData.name);
+            const ident = args.id.replace('ws:', '');
+            console.log('Direct Webshare file:', ident);
             
             // Získáme přímo download link
             const link = await getFileLink(ident, token);
@@ -623,7 +600,7 @@ async function handleStreamRequest(args) {
                 return {
                     streams: [{
                         name: 'Webshare',
-                        title: idData.name,
+                        title: 'Z katalogu Webshare Hledání',
                         url: link
                     }]
                 };
