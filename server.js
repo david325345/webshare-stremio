@@ -6,7 +6,7 @@ const xml2js = require('xml2js');
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '4.0.1', // Personal URL system - fixed handler
+    version: '4.0.2', // Fixed name + removed API key from placeholder
     name: 'Webshare Anime',
     description: 'Anime z Webshare.cz',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -1558,7 +1558,7 @@ app.get('/', (req, res) => {
         
         <div class="form-group">
             <label for="tmdb">TMDB API Key (volitelné)</label>
-            <input type="text" id="tmdb" name="tmdb" placeholder="79171fa24cf58cc89b8df8b165f0bcd4">
+            <input type="text" id="tmdb" name="tmdb" placeholder="Získejte zdarma na themoviedb.org">
         </div>
         
         <button type="submit" class="install-btn">
@@ -1684,7 +1684,7 @@ app.get('/:userConfig/manifest.json', (req, res) => {
         const personalManifest = {
             ...manifest,
             id: `${manifest.id}.${configB64.substring(0, 8)}`,
-            name: `${manifest.name} (${config.username})`,
+            name: 'Webshare+Anime', // Jednotný název pro všechny
             config: undefined, // Odstraníme config - není potřeba
             behaviorHints: {
                 ...manifest.behaviorHints,
