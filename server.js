@@ -6,7 +6,7 @@ const xml2js = require('xml2js');
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '5.1.5', // Fixed Express route syntax - two routes instead of optional param
+    version: '5.1.6', // Added debug logging for search API
     name: 'Webshare Anime',
     description: 'Anime a filmy z Webshare.cz s vyhledáváním',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -86,28 +86,44 @@ async function login(username, saltedPassword) {
 async function search(query, token) {
     console.log('Searching:', query);
     const params = `what=${encodeURIComponent(query)}&category=video&limit=50&wst=${encodeURIComponent(token)}`;
-    const resp = await needle('post', 'https://webshare.cz/api/search/', params, { headers });
     
-    const files = resp.body.children.filter(el => el.name == 'file');
-    return files.map(el => {
-        const ident = el.children.find(c => c.name == 'ident')?.value;
-        const name = el.children.find(c => c.name == 'name')?.value;
-        const size = el.children.find(c => c.name == 'size')?.value;
-        const type = el.children.find(c => c.name == 'type')?.value;
-        const img = el.children.find(c => c.name == 'img')?.value;
-        const positive_votes = el.children.find(c => c.name == 'positive_votes')?.value || '0';
-        const negative_votes = el.children.find(c => c.name == 'negative_votes')?.value || '0';
+    try {
+        const resp = await needle('post', 'https://webshare.cz/api/search/', params, { headers });
         
-        return { 
-            ident, 
-            name, 
-            size: parseInt(size || 0),
-            type,
-            img,
-            positive_votes: parseInt(positive_votes),
-            negative_votes: parseInt(negative_votes)
-        };
-    });
+        console.log('Search API response status:', resp.statusCode);
+        console.log('Search API body type:', typeof resp.body);
+        
+        if (!resp.body || !resp.body.children) {
+            console.log('ERROR: Invalid API response structure');
+            return [];
+        }
+        
+        const files = resp.body.children.filter(el => el.name == 'file');
+        console.log('Files found:', files.length);
+        
+        return files.map(el => {
+            const ident = el.children.find(c => c.name == 'ident')?.value;
+            const name = el.children.find(c => c.name == 'name')?.value;
+            const size = el.children.find(c => c.name == 'size')?.value;
+            const type = el.children.find(c => c.name == 'type')?.value;
+            const img = el.children.find(c => c.name == 'img')?.value;
+            const positive_votes = el.children.find(c => c.name == 'positive_votes')?.value || '0';
+            const negative_votes = el.children.find(c => c.name == 'negative_votes')?.value || '0';
+            
+            return { 
+                ident, 
+                name, 
+                size: parseInt(size || 0),
+                type,
+                img,
+                positive_votes: parseInt(positive_votes),
+                negative_votes: parseInt(negative_votes)
+            };
+        });
+    } catch (error) {
+        console.error('Search API error:', error.message);
+        return [];
+    }
 }
 
 async function getFileLink(ident, token) {
