@@ -6,7 +6,7 @@ const xml2js = require('xml2js');
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '5.1.5', // Fixed Express route syntax - two routes instead of optional param
+    version: '5.2.0', // Embedded file metadata in ID for proper meta display
     name: 'Webshare Anime',
     description: 'Anime a filmy z Webshare.cz s vyhledáváním',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -516,8 +516,18 @@ async function handleCatalogRequest(args) {
             const nameLower = file.name.toLowerCase();
             const isSeries = /s\d{2}e\d{2}|season|episode|e\d{2}/i.test(file.name);
             
+            // Vytvoříme ID s embedded img URL pro meta handler
+            const idData = {
+                ident: file.ident,
+                img: file.img,
+                name: file.name,
+                size: file.size,
+                votes: { up: file.positive_votes, down: file.negative_votes }
+            };
+            const idEncoded = Buffer.from(JSON.stringify(idData)).toString('base64');
+            
             return {
-                id: `ws:${file.ident}`,
+                id: `ws:${idEncoded}`,
                 type: isSeries ? 'series' : 'movie',
                 name: file.name,
                 poster: file.img || 'https://via.placeholder.com/300x450/1a1a2e/00d9ff?text=No+Image',
@@ -547,26 +557,21 @@ async function handleMetaRequest(args) {
         return { meta: null };
     }
     
-    const ident = args.id.replace('ws:', '');
-    const { username, password } = args.config || {};
-    
-    if (!username || !password) {
-        return { meta: null };
-    }
-    
     try {
-        // Získáme file info ze search (použijeme ident jako query)
-        const saltedPassword = await saltPassword(username, password);
-        const token = await login(username, saltedPassword);
+        // Dekódujeme ID
+        const encoded = args.id.replace('ws:', '');
+        const idData = JSON.parse(Buffer.from(encoded, 'base64').toString('utf8'));
         
-        // Nemáme direct file info API, takže vrátíme basic meta
+        console.log('Decoded file data:', idData.name);
+        
+        // Vrátíme meta s poster z katalogu
         return {
             meta: {
                 id: args.id,
                 type: args.type,
-                name: `Webshare soubor ${ident}`,
-                poster: 'https://via.placeholder.com/300x450/1a1a2e/00d9ff?text=Webshare',
-                description: 'Klikněte pro přehrání'
+                name: idData.name,
+                poster: idData.img || 'https://via.placeholder.com/300x450/1a1a2e/00d9ff?text=No+Image',
+                description: `📦 ${formatSize(idData.size)}\n⬆️ ${idData.votes.up} 👍 | ${idData.votes.down} 👎`
             }
         };
     } catch (error) {
@@ -599,8 +604,12 @@ async function handleStreamRequest(args) {
         
         // SPECIÁLNÍ: Přímý Webshare soubor z katalogu
         if (args.id.startsWith('ws:')) {
-            const ident = args.id.replace('ws:', '');
-            console.log('Direct Webshare file:', ident);
+            // Dekódujeme ID
+            const encoded = args.id.replace('ws:', '');
+            const idData = JSON.parse(Buffer.from(encoded, 'base64').toString('utf8'));
+            const ident = idData.ident;
+            
+            console.log('Direct Webshare file:', idData.name);
             
             // Získáme přímo download link
             const link = await getFileLink(ident, token);
@@ -609,7 +618,7 @@ async function handleStreamRequest(args) {
                 return {
                     streams: [{
                         name: 'Webshare',
-                        title: 'Z katalogu Webshare Hledání',
+                        title: idData.name,
                         url: link
                     }]
                 };
