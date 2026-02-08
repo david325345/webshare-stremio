@@ -6,7 +6,7 @@ const xml2js = require('xml2js');
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '5.2.7', // Removed background field to fix loading screen
+    version: '5.2.8', // Re-added background field + logo for proper display
     name: 'Webshare Anime',
     description: 'Anime a filmy z Webshare.cz s vyhledáváním',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -570,6 +570,8 @@ async function handleMetaRequest(args) {
                 type: args.type,
                 name: `Webshare soubor`,
                 poster: placeholderUrl,
+                background: placeholderUrl, // Pro pozadí detailu
+                logo: placeholderUrl, // Pokusíme se i logo
                 description: 'Klikněte pro přehrání'
             }
         };
