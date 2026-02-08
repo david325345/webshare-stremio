@@ -6,7 +6,7 @@ const xml2js = require('xml2js');
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '5.1.7', // Added debug for extra params parsing
+    version: '5.1.8', // Fixed catalog route with regex to handle spaces in search
     name: 'Webshare Anime',
     description: 'Anime a filmy z Webshare.cz s vyhledáváním',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -1896,18 +1896,22 @@ app.get('/:userConfig/catalog/:type/:id.json', async (req, res) => {
     }
 });
 
-// Personal catalog handler - S extra parametry v path
-app.get('/:userConfig/catalog/:type/:id/:extra.json', async (req, res) => {
+// Personal catalog handler - S extra parametry v path (použití regex pro mezery)
+app.get(/^\/([^\/]+)\/catalog\/([^\/]+)\/([^\/]+)\/(.+)\.json$/, async (req, res) => {
     try {
-        const configB64 = req.params.userConfig;
+        const configB64 = req.params[0];
+        const type = req.params[1];
+        const id = req.params[2];
+        const extraPath = req.params[3];
+        
         const configJson = Buffer.from(configB64, 'base64').toString('utf8');
         const config = JSON.parse(configJson);
         
         // Parse extra parametry z URL path (formát: search=frieren)
         let extraParams = {};
-        if (req.params.extra) {
-            console.log('DEBUG: req.params.extra =', req.params.extra);
-            const pairs = req.params.extra.split('&');
+        if (extraPath) {
+            console.log('DEBUG: extraPath =', extraPath);
+            const pairs = extraPath.split('&');
             for (const pair of pairs) {
                 const [key, value] = pair.split('=');
                 if (key && value) {
@@ -1922,8 +1926,8 @@ app.get('/:userConfig/catalog/:type/:id/:extra.json', async (req, res) => {
         console.log('DEBUG: final extra =', extra);
         
         const args = {
-            type: req.params.type,
-            id: req.params.id,
+            type: type,
+            id: id,
             extra: extra,
             config: config
         };
