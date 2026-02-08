@@ -6,7 +6,7 @@ const xml2js = require('xml2js');
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '5.1.2', // Disabled default addonRouter - personal URLs only
+    version: '5.1.3', // Added request logging for debugging
     name: 'Webshare Anime',
     description: 'Anime a filmy z Webshare.cz s vyhledáváním',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -1584,6 +1584,7 @@ const app = express();
 
 // CORS middleware
 app.use((req, res, next) => {
+    console.log(`📥 ${req.method} ${req.url}`); // LOG KAŽDÉHO REQUESTU
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
