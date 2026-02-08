@@ -6,14 +6,24 @@ const xml2js = require('xml2js');
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '4.0.2', // Fixed name + removed API key from placeholder
+    version: '5.1.0', // Added optional search catalog toggle
     name: 'Webshare Anime',
-    description: 'Anime z Webshare.cz',
+    description: 'Anime a filmy z Webshare.cz s vyhledáváním',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
-    resources: ['stream'],
+    resources: ['catalog', 'meta', 'stream'],
     types: ['series', 'movie'],
-    catalogs: [],
-    idPrefixes: ['tt', 'kitsu'],
+    catalogs: [
+        {
+            type: 'movie',
+            id: 'webshare-search',
+            name: '🔍 Webshare Hledání',
+            extra: [
+                { name: 'search', isRequired: false },
+                { name: 'skip', isRequired: false }
+            ]
+        }
+    ],
+    idPrefixes: ['tt', 'kitsu', 'ws'],
     behaviorHints: {
         configurable: true,
         configurationRequired: false,
@@ -463,6 +473,105 @@ async function getTMDBNames(imdbId, type, apiKey) {
     return { names: [], isJapanese: false };
 }
 
+// ========== CATALOG HANDLER ==========
+builder.defineCatalogHandler(async (args) => {
+    console.log('=== CATALOG REQUEST ===');
+    console.log('Type:', args.type);
+    console.log('ID:', args.id);
+    console.log('Extra:', args.extra);
+    
+    if (args.id !== 'webshare-search') {
+        return { metas: [] };
+    }
+    
+    // Credentials z config
+    const { username, password } = args.config || {};
+    if (!username || !password) {
+        console.log('Missing credentials for catalog');
+        return { metas: [] };
+    }
+    
+    try {
+        // Search query z extra
+        const searchQuery = args.extra?.search || '';
+        const skip = parseInt(args.extra?.skip || '0');
+        
+        if (!searchQuery) {
+            // Prázdný search = vrátíme prázdné
+            return { metas: [] };
+        }
+        
+        console.log(`Catalog search: "${searchQuery}", skip: ${skip}`);
+        
+        // Login a search
+        const saltedPassword = await saltPassword(username, password);
+        const token = await login(username, saltedPassword);
+        const results = await search(searchQuery, token);
+        
+        console.log(`Found ${results.length} results for catalog`);
+        
+        // Převedeme na metas
+        const metas = results.slice(skip, skip + 50).map(file => {
+            // Detekce typu - film nebo seriál
+            const nameLower = file.name.toLowerCase();
+            const isSeries = /s\d{2}e\d{2}|season|episode|e\d{2}/i.test(file.name);
+            
+            return {
+                id: `ws:${file.ident}`,
+                type: isSeries ? 'series' : 'movie',
+                name: file.name,
+                poster: file.img || 'https://via.placeholder.com/300x450/1a1a2e/00d9ff?text=No+Image',
+                posterShape: 'poster',
+                description: `📦 ${formatSize(file.size)}\n⬆️ ${file.positive_votes} 👍 | ${file.negative_votes} 👎`
+            };
+        });
+        
+        return { metas };
+    } catch (error) {
+        console.error('Catalog error:', error.message);
+        return { metas: [] };
+    }
+});
+
+// ========== META HANDLER ==========
+builder.defineMetaHandler(async (args) => {
+    console.log('=== META REQUEST ===');
+    console.log('Type:', args.type);
+    console.log('ID:', args.id);
+    
+    // Jen pro ws: IDs
+    if (!args.id.startsWith('ws:')) {
+        return { meta: null };
+    }
+    
+    const ident = args.id.replace('ws:', '');
+    const { username, password } = args.config || {};
+    
+    if (!username || !password) {
+        return { meta: null };
+    }
+    
+    try {
+        // Získáme file info ze search (použijeme ident jako query)
+        const saltedPassword = await saltPassword(username, password);
+        const token = await login(username, saltedPassword);
+        
+        // Nemáme direct file info API, takže vrátíme basic meta
+        return {
+            meta: {
+                id: args.id,
+                type: args.type,
+                name: `Webshare soubor ${ident}`,
+                poster: 'https://via.placeholder.com/300x450/1a1a2e/00d9ff?text=Webshare',
+                description: 'Klikněte pro přehrání'
+            }
+        };
+    } catch (error) {
+        console.error('Meta error:', error.message);
+        return { meta: null };
+    }
+});
+
 // Stream handler funkce - použita jak builderem tak personal routes
 async function handleStreamRequest(args) {
     console.log('=== STREAM REQUEST ===');
@@ -481,6 +590,27 @@ async function handleStreamRequest(args) {
         // Připravíme heslo a přihlásíme se
         const saltedPassword = await saltPassword(username, password);
         const token = await login(username, saltedPassword);
+        
+        // SPECIÁLNÍ: Přímý Webshare soubor z katalogu
+        if (args.id.startsWith('ws:')) {
+            const ident = args.id.replace('ws:', '');
+            console.log('Direct Webshare file:', ident);
+            
+            // Získáme přímo download link
+            const link = await getFileLink(ident, token);
+            
+            if (link) {
+                return {
+                    streams: [{
+                        name: 'Webshare',
+                        title: 'Z katalogu Webshare Hledání',
+                        url: link
+                    }]
+                };
+            } else {
+                return { streams: [] };
+            }
+        }
 
         // Získáme všechny varianty názvů
         let searchQueries = [];
@@ -1561,6 +1691,19 @@ app.get('/', (req, res) => {
             <input type="text" id="tmdb" name="tmdb" placeholder="Získejte zdarma na themoviedb.org">
         </div>
         
+        <div class="note" style="background: #16213e; border-left: 3px solid #9d4edd; margin: 20px 0;">
+            <div style="display: flex; align-items: center; gap: 10px;">
+                <input type="checkbox" id="enableSearch" name="enableSearch" checked style="width: auto; min-width: 20px; height: 20px; cursor: pointer;">
+                <label for="enableSearch" style="margin: 0; cursor: pointer; flex: 1;">
+                    <strong>Přímé vyhledávání na Webshare</strong><br>
+                    <span style="font-size: 13px; color: #aaa;">
+                        Přidá katalog "🔍 Webshare Hledání" do Board ve Stremio. 
+                        Můžete vyhledávat přímo na Webshare bez IMDb/TMDB.
+                    </span>
+                </label>
+            </div>
+        </div>
+        
         <button type="submit" class="install-btn">
             🔗 Vygenerovat instalační link
         </button>
@@ -1634,6 +1777,7 @@ app.get('/', (req, res) => {
             const username = document.getElementById('username').value.trim();
             const password = document.getElementById('password').value.trim();
             const tmdb = document.getElementById('tmdb').value.trim();
+            const enableSearch = document.getElementById('enableSearch').checked;
             
             if (!username || !password) {
                 alert('⚠️ Username a password jsou povinné!');
@@ -1644,7 +1788,8 @@ app.get('/', (req, res) => {
             const config = {
                 username: username,
                 password: password,
-                tmdb_api_key: tmdb || ''
+                tmdb_api_key: tmdb || '',
+                enable_search: enableSearch
             };
             
             // Base64 encode config pro personal URL
@@ -1679,12 +1824,17 @@ app.get('/:userConfig/manifest.json', (req, res) => {
         const config = JSON.parse(configJson);
         
         console.log(`📦 Personal manifest request for user: ${config.username}`);
+        console.log(`   Search catalog enabled: ${config.enable_search !== false}`);
         
         // Vytvoříme personal manifest BEZ config fields
         const personalManifest = {
             ...manifest,
             id: `${manifest.id}.${configB64.substring(0, 8)}`,
             name: 'Webshare+Anime', // Jednotný název pro všechny
+            // Katalog jen pokud je enable_search true (default true pro zpětnou kompatibilitu)
+            catalogs: config.enable_search !== false ? manifest.catalogs : [],
+            // Resources - přidáme catalog/meta jen pokud je enabled
+            resources: config.enable_search !== false ? ['catalog', 'meta', 'stream'] : ['stream'],
             config: undefined, // Odstraníme config - není potřeba
             behaviorHints: {
                 ...manifest.behaviorHints,
@@ -1699,6 +1849,68 @@ app.get('/:userConfig/manifest.json', (req, res) => {
     } catch (error) {
         console.error('Personal manifest error:', error.message);
         res.status(400).json({ error: 'Invalid config URL' });
+    }
+});
+
+// Personal catalog handler
+app.get('/:userConfig/catalog/:type/:id.json', async (req, res) => {
+    try {
+        const configB64 = req.params.userConfig;
+        const configJson = Buffer.from(configB64, 'base64').toString('utf8');
+        const config = JSON.parse(configJson);
+        
+        const args = {
+            type: req.params.type,
+            id: req.params.id,
+            extra: req.query,
+            config: config
+        };
+        
+        console.log('=== PERSONAL CATALOG REQUEST ===');
+        console.log('User:', config.username);
+        console.log('Catalog:', args.id);
+        console.log('Search:', args.extra.search);
+        
+        // Zavoláme catalog handler
+        const catalogInterface = builder.getInterface();
+        const result = await catalogInterface.get({ resource: 'catalog', type: args.type, id: args.id, extra: args.extra, config: args.config });
+        
+        res.setHeader('Content-Type', 'application/json');
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        res.json(result);
+    } catch (error) {
+        console.error('Personal catalog error:', error.message);
+        res.status(500).json({ metas: [] });
+    }
+});
+
+// Personal meta handler
+app.get('/:userConfig/meta/:type/:id.json', async (req, res) => {
+    try {
+        const configB64 = req.params.userConfig;
+        const configJson = Buffer.from(configB64, 'base64').toString('utf8');
+        const config = JSON.parse(configJson);
+        
+        const args = {
+            type: req.params.type,
+            id: req.params.id,
+            config: config
+        };
+        
+        console.log('=== PERSONAL META REQUEST ===');
+        console.log('User:', config.username);
+        console.log('ID:', args.id);
+        
+        // Zavoláme meta handler
+        const metaInterface = builder.getInterface();
+        const result = await metaInterface.get({ resource: 'meta', type: args.type, id: args.id, config: args.config });
+        
+        res.setHeader('Content-Type', 'application/json');
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        res.json(result);
+    } catch (error) {
+        console.error('Personal meta error:', error.message);
+        res.status(500).json({ meta: null });
     }
 });
 
