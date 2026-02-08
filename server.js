@@ -6,7 +6,7 @@ const xml2js = require('xml2js');
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '4.0.0', // Personal URL system
+    version: '4.0.1', // Personal URL system - fixed handler
     name: 'Webshare Anime',
     description: 'Anime z Webshare.cz',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -463,7 +463,8 @@ async function getTMDBNames(imdbId, type, apiKey) {
     return { names: [], isJapanese: false };
 }
 
-builder.defineStreamHandler(async (args) => {
+// Stream handler funkce - použita jak builderem tak personal routes
+async function handleStreamRequest(args) {
     console.log('=== STREAM REQUEST ===');
     console.log('Full args:', JSON.stringify(args, null, 2));
     console.log('Type:', args.type);
@@ -1407,7 +1408,10 @@ builder.defineStreamHandler(async (args) => {
         // Vracíme prázdné pole i při erroru
         return { streams: [] };
     }
-});
+}
+
+// Registrujeme handler do builderu
+builder.defineStreamHandler(handleStreamRequest);
 
 
 // ========== KEEP-ALIVE CRON JOB ==========
@@ -1720,9 +1724,8 @@ app.get('/:userConfig/stream/:type/:id.json', async (req, res) => {
         console.log('Type:', args.type);
         console.log('ID:', args.id);
         
-        // Zavoláme builder stream handler
-        const streamHandler = builder.getInterface().handlers.stream;
-        const result = await streamHandler(args);
+        // Zavoláme stream handler přímo
+        const result = await handleStreamRequest(args);
         
         res.setHeader('Content-Type', 'application/json');
         res.setHeader('Access-Control-Allow-Origin', '*');
