@@ -6,7 +6,7 @@ const xml2js = require('xml2js');
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '5.1.3', // Added request logging for debugging
+    version: '5.1.4', // Fixed catalog URL parsing for Stremio format
     name: 'Webshare Anime',
     description: 'Anime a filmy z Webshare.cz s vyhledáváním',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -1859,24 +1859,40 @@ app.get('/:userConfig/manifest.json', (req, res) => {
     }
 });
 
-// Personal catalog handler
-app.get('/:userConfig/catalog/:type/:id.json', async (req, res) => {
+// Personal catalog handler - podporuje oba formáty URL
+app.get('/:userConfig/catalog/:type/:id/:extra?.json', async (req, res) => {
     try {
         const configB64 = req.params.userConfig;
         const configJson = Buffer.from(configB64, 'base64').toString('utf8');
         const config = JSON.parse(configJson);
         
+        // Parse extra parametry z URL path (formát: key=value nebo key=value&key2=value2)
+        let extraParams = {};
+        if (req.params.extra) {
+            // Formát: search=frieren nebo search=frieren&skip=10
+            const pairs = req.params.extra.split('&');
+            for (const pair of pairs) {
+                const [key, value] = pair.split('=');
+                if (key && value) {
+                    extraParams[key] = decodeURIComponent(value);
+                }
+            }
+        }
+        
+        // Merge s query params (pokud existují)
+        const extra = { ...extraParams, ...req.query };
+        
         const args = {
             type: req.params.type,
             id: req.params.id,
-            extra: req.query,
+            extra: extra,
             config: config
         };
         
         console.log('=== PERSONAL CATALOG REQUEST ===');
         console.log('User:', config.username);
         console.log('Catalog:', args.id);
-        console.log('Search:', args.extra.search);
+        console.log('Extra params:', args.extra);
         
         // Zavoláme catalog handler přímo
         const result = await handleCatalogRequest(args);
