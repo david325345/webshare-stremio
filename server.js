@@ -6,7 +6,7 @@ const xml2js = require('xml2js');
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '5.2.9', // Added multiple background fields + landscape posterShape
+    version: '5.3.1', // Always use placeholder.svg as background
     name: 'Webshare Anime',
     description: 'Anime a filmy z Webshare.cz s vyhledáváním',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -526,11 +526,15 @@ async function handleCatalogRequest(args) {
             };
             const idEncoded = Buffer.from(JSON.stringify(idData)).toString('base64');
             
+            const placeholderUrl = `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:10000'}/placeholder.svg`;
+            const posterUrl = file.img || placeholderUrl;
+            
             return {
                 id: `ws:${idEncoded}`,
                 type: isSeries ? 'series' : 'movie',
                 name: file.name,
-                poster: file.img || `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:10000'}/placeholder.svg`,
+                poster: posterUrl,
+                background: placeholderUrl, // VŽDY placeholder na pozadí
                 posterShape: 'poster',
                 description: `📦 ${formatSize(file.size)}\n⬆️ ${file.positive_votes} 👍 | ${file.negative_votes} 👎`
             };
@@ -558,23 +562,21 @@ async function handleMetaRequest(args) {
     }
     
     try {
-        // ID je ws:ident - nemáme přístup k detailům souboru
-        // Vracíme basic meta S placeholder posterem (nutné pro Apple TV)
-        const ident = args.id.replace('ws:', '');
+        // Dekódujeme embedded data z ID
+        const encoded = args.id.replace('ws:', '');
+        const idData = JSON.parse(Buffer.from(encoded, 'base64').toString('utf8'));
         
         const placeholderUrl = `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:10000'}/placeholder.svg`;
+        const posterUrl = idData.img || placeholderUrl;
         
         return {
             meta: {
                 id: args.id,
                 type: args.type,
-                name: `Webshare soubor`,
-                poster: placeholderUrl,
-                posterShape: 'landscape', // Zkusíme landscape pro pozadí
-                background: placeholderUrl,
-                backgroundImage: placeholderUrl, // Alternativní field
-                backdrop: placeholderUrl, // Další možný field
-                description: 'Klikněte pro přehrání'
+                name: idData.name,
+                poster: posterUrl,
+                background: placeholderUrl, // VŽDY placeholder na pozadí
+                description: `📦 ${formatSize(idData.size)}\n⬆️ ${idData.votes.up} 👍 | ${idData.votes.down} 👎\n\nKlikněte pro přehrání`
             }
         };
     } catch (error) {
