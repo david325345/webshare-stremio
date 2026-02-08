@@ -6,7 +6,7 @@ const xml2js = require('xml2js');
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '3.22.1',
+    version: '3.23.1',
     name: 'Webshare Anime',
     description: 'Anime z Webshare.cz',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -1464,6 +1464,7 @@ app.get('/', (req, res) => {
 <head>
     <title>Webshare Anime Addon</title>
     <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <style>
         body { 
             font-family: Arial, sans-serif; 
@@ -1474,6 +1475,29 @@ app.get('/', (req, res) => {
             color: #eee;
         }
         h1 { color: #00d9ff; }
+        h2 { color: #9d4edd; margin-top: 30px; }
+        .form-group {
+            margin: 15px 0;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            color: #00d9ff;
+        }
+        input {
+            width: 100%;
+            padding: 10px;
+            background: #16213e;
+            border: 1px solid #00d9ff;
+            border-radius: 5px;
+            color: #eee;
+            font-size: 14px;
+            box-sizing: border-box;
+        }
+        input:focus {
+            outline: none;
+            border-color: #9d4edd;
+        }
         .install-btn {
             display: inline-block;
             background: #7b2cbf;
@@ -1483,14 +1507,29 @@ app.get('/', (req, res) => {
             border-radius: 5px;
             margin: 20px 0;
             font-size: 18px;
+            border: none;
+            cursor: pointer;
+            width: 100%;
         }
         .install-btn:hover { background: #9d4edd; }
+        .install-btn:disabled {
+            background: #555;
+            cursor: not-allowed;
+        }
         code { 
             background: #16213e; 
             padding: 2px 6px; 
             border-radius: 3px;
             color: #00d9ff;
         }
+        .note {
+            background: #16213e;
+            padding: 10px;
+            border-left: 3px solid #00d9ff;
+            margin: 15px 0;
+            font-size: 14px;
+        }
+        ul { line-height: 1.8; }
     </style>
 </head>
 <body>
@@ -1498,18 +1537,42 @@ app.get('/', (req, res) => {
     <p>Stremio addon pro anime a seriály z Webshare.cz</p>
     
     <h2>📥 Instalace</h2>
-    <p>Klikněte na tlačítko pro instalaci do Stremio:</p>
-    <a href="stremio://${req.get('host')}/manifest.json" class="install-btn">
-        🚀 Nainstalovat do Stremio
-    </a>
+    <div class="note">
+        Vyplňte své přihlašovací údaje a klikněte na tlačítko pro instalaci.
+    </div>
     
-    <h2>⚙️ Konfigurace</h2>
-    <p>Po instalaci budete požádáni o:</p>
-    <ul>
-        <li><code>username</code> - Webshare přihlašovací jméno</li>
-        <li><code>password</code> - Webshare heslo</li>
-        <li><code>tmdb_api_key</code> - TMDB API klíč (volitelné)</li>
-    </ul>
+    <form id="installForm">
+        <div class="form-group">
+            <label for="username">Webshare username *</label>
+            <input type="text" id="username" name="username" placeholder="vase-jmeno" required>
+        </div>
+        
+        <div class="form-group">
+            <label for="password">Webshare password *</label>
+            <input type="password" id="password" name="password" placeholder="••••••••" required>
+        </div>
+        
+        <div class="form-group">
+            <label for="tmdb">TMDB API Key (volitelné)</label>
+            <input type="text" id="tmdb" name="tmdb" placeholder="79171fa24cf58cc89b8df8b165f0bcd4">
+        </div>
+        
+        <button type="submit" class="install-btn" id="installBtn">
+            🚀 Nainstalovat do Stremio
+        </button>
+    </form>
+    
+    <div id="installLinkContainer" style="display: none; margin-top: 20px;">
+        <div class="note">
+            <strong>📋 Instalační link:</strong>
+            <div style="margin-top: 10px; word-break: break-all; background: #0d1b2a; padding: 10px; border-radius: 5px; font-family: monospace; font-size: 12px;">
+                <span id="installLinkDisplay"></span>
+            </div>
+            <button onclick="copyInstallLink()" style="margin-top: 10px; padding: 8px 15px; background: #00d9ff; color: #1a1a2e; border: none; border-radius: 5px; cursor: pointer; font-weight: bold;">
+                📋 Zkopírovat link
+            </button>
+        </div>
+    </div>
     
     <h2>✨ Funkce</h2>
     <ul>
@@ -1520,10 +1583,74 @@ app.get('/', (req, res) => {
         <li>🎬 Smart filtrování podle roku a epizod</li>
     </ul>
     
+    <div class="note">
+        <strong>💡 Tip:</strong> TMDB API klíč získáte zdarma na 
+        <a href="https://www.themoviedb.org/settings/api" target="_blank" style="color: #00d9ff;">themoviedb.org</a>
+    </div>
+    
     <p style="margin-top: 40px; color: #999; font-size: 12px;">
         Version ${manifest.version} | 
         <a href="/manifest.json" style="color: #00d9ff;">manifest.json</a>
     </p>
+    
+    <script>
+        const form = document.getElementById('installForm');
+        const btn = document.getElementById('installBtn');
+        let currentInstallUrl = '';
+        
+        function copyInstallLink() {
+            navigator.clipboard.writeText(currentInstallUrl).then(() => {
+                alert('✅ Link zkopírován do schránky!');
+            }).catch(() => {
+                // Fallback pro starší prohlížeče
+                const textArea = document.createElement('textarea');
+                textArea.value = currentInstallUrl;
+                document.body.appendChild(textArea);
+                textArea.select();
+                document.execCommand('copy');
+                document.body.removeChild(textArea);
+                alert('✅ Link zkopírován do schránky!');
+            });
+        }
+        
+        form.addEventListener('submit', (e) => {
+            e.preventDefault();
+            
+            const username = document.getElementById('username').value.trim();
+            const password = document.getElementById('password').value.trim();
+            const tmdb = document.getElementById('tmdb').value.trim();
+            
+            if (!username || !password) {
+                alert('⚠️ Username a password jsou povinné!');
+                return;
+            }
+            
+            // Vytvoříme config objekt
+            const config = {
+                username: username,
+                password: password
+            };
+            
+            // Přidáme TMDB klíč pokud je vyplněn
+            if (tmdb) {
+                config.tmdb_api_key = tmdb;
+            }
+            
+            // URL encode config
+            const configEncoded = encodeURIComponent(JSON.stringify(config));
+            
+            // Vytvoříme Stremio install URL
+            const installUrl = \`stremio://\${window.location.host}/manifest.json?config=\${configEncoded}\`;
+            currentInstallUrl = installUrl;
+            
+            // Zobrazíme link
+            document.getElementById('installLinkDisplay').textContent = installUrl;
+            document.getElementById('installLinkContainer').style.display = 'block';
+            
+            // Přesměrujeme
+            window.location.href = installUrl;
+        });
+    </script>
 </body>
 </html>
     `);
