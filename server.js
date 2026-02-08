@@ -6,7 +6,7 @@ const xml2js = require('xml2js');
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '5.2.0', // Embedded file metadata in ID for proper meta display
+    version: '5.2.3', // Better placeholder - SVG gradient with Webshare text
     name: 'Webshare Anime',
     description: 'Anime a filmy z Webshare.cz s vyhledáváním',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -530,7 +530,7 @@ async function handleCatalogRequest(args) {
                 id: `ws:${idEncoded}`,
                 type: isSeries ? 'series' : 'movie',
                 name: file.name,
-                poster: file.img || 'https://via.placeholder.com/300x450/1a1a2e/00d9ff?text=No+Image',
+                poster: file.img || 'data:image/svg+xml,%3Csvg width="300" height="450" xmlns="http://www.w3.org/2000/svg"%3E%3Cdefs%3E%3ClinearGradient id="grad" x1="0%25" y1="0%25" x2="100%25" y2="100%25"%3E%3Cstop offset="0%25" style="stop-color:%231a1a2e;stop-opacity:1" /%3E%3Cstop offset="100%25" style="stop-color:%23240046;stop-opacity:1" /%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width="300" height="450" fill="url(%23grad)"/%3E%3Ctext x="150" y="220" font-family="Arial, sans-serif" font-size="32" font-weight="bold" fill="%2300d9ff" text-anchor="middle"%3EWebshare%3C/text%3E%3Ctext x="150" y="250" font-family="Arial, sans-serif" font-size="14" fill="%239d4edd" text-anchor="middle"%3ENo Image%3C/text%3E%3C/svg%3E',
                 posterShape: 'poster',
                 description: `📦 ${formatSize(file.size)}\n⬆️ ${file.positive_votes} 👍 | ${file.negative_votes} 👎`
             };
@@ -558,20 +558,17 @@ async function handleMetaRequest(args) {
     }
     
     try {
-        // Dekódujeme ID
-        const encoded = args.id.replace('ws:', '');
-        const idData = JSON.parse(Buffer.from(encoded, 'base64').toString('utf8'));
+        // ID je ws:ident - nemáme přístup k detailům souboru
+        // Vracíme basic meta S placeholder posterem (nutné pro Apple TV)
+        const ident = args.id.replace('ws:', '');
         
-        console.log('Decoded file data:', idData.name);
-        
-        // Vrátíme meta s poster z katalogu
         return {
             meta: {
                 id: args.id,
                 type: args.type,
-                name: idData.name,
-                poster: idData.img || 'https://via.placeholder.com/300x450/1a1a2e/00d9ff?text=No+Image',
-                description: `📦 ${formatSize(idData.size)}\n⬆️ ${idData.votes.up} 👍 | ${idData.votes.down} 👎`
+                name: `Webshare soubor`,
+                poster: 'data:image/svg+xml,%3Csvg width="300" height="450" xmlns="http://www.w3.org/2000/svg"%3E%3Cdefs%3E%3ClinearGradient id="grad" x1="0%25" y1="0%25" x2="100%25" y2="100%25"%3E%3Cstop offset="0%25" style="stop-color:%231a1a2e;stop-opacity:1" /%3E%3Cstop offset="100%25" style="stop-color:%23240046;stop-opacity:1" /%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width="300" height="450" fill="url(%23grad)"/%3E%3Ctext x="150" y="220" font-family="Arial, sans-serif" font-size="32" font-weight="bold" fill="%2300d9ff" text-anchor="middle"%3EWebshare%3C/text%3E%3Ctext x="150" y="250" font-family="Arial, sans-serif" font-size="14" fill="%239d4edd" text-anchor="middle"%3ENo Image%3C/text%3E%3C/svg%3E',
+                description: 'Klikněte pro přehrání'
             }
         };
     } catch (error) {
