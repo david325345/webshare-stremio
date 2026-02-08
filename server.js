@@ -6,7 +6,7 @@ const xml2js = require('xml2js');
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '5.1.1', // Fixed catalog/meta handlers for personal URLs
+    version: '5.1.2', // Disabled default addonRouter - personal URLs only
     name: 'Webshare Anime',
     description: 'Anime a filmy z Webshare.cz s vyhledáváním',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -1952,9 +1952,10 @@ app.get('/:userConfig/stream/:type/:id.json', async (req, res) => {
     }
 });
 
-// Stremio addon routes (default - vyžaduje config)
-const addonRouter = getRouter(builder.getInterface());
-app.use(addonRouter);
+// Stremio addon routes - DISABLED pro personal URL system
+// Personal routes (:userConfig/*) zajišťují všechnu funkcionalitu
+// const addonRouter = getRouter(builder.getInterface());
+// app.use(addonRouter);
 
 const PORT = process.env.PORT || 7000;
 app.listen(PORT, () => {
