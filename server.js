@@ -6,7 +6,7 @@ const xml2js = require('xml2js');
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '3.22.0',
+    version: '3.22.1',
     name: 'Webshare Anime',
     description: 'Anime z Webshare.cz',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -1455,6 +1455,79 @@ app.use((req, res, next) => {
 
 // Static files (logo)
 app.use(express.static(path.join(__dirname, 'public')));
+
+// Root route - installation page
+app.get('/', (req, res) => {
+    res.send(`
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Webshare Anime Addon</title>
+    <meta charset="utf-8">
+    <style>
+        body { 
+            font-family: Arial, sans-serif; 
+            max-width: 600px; 
+            margin: 50px auto; 
+            padding: 20px;
+            background: #1a1a2e;
+            color: #eee;
+        }
+        h1 { color: #00d9ff; }
+        .install-btn {
+            display: inline-block;
+            background: #7b2cbf;
+            color: white;
+            padding: 15px 30px;
+            text-decoration: none;
+            border-radius: 5px;
+            margin: 20px 0;
+            font-size: 18px;
+        }
+        .install-btn:hover { background: #9d4edd; }
+        code { 
+            background: #16213e; 
+            padding: 2px 6px; 
+            border-radius: 3px;
+            color: #00d9ff;
+        }
+    </style>
+</head>
+<body>
+    <h1>🎌 Webshare Anime Addon</h1>
+    <p>Stremio addon pro anime a seriály z Webshare.cz</p>
+    
+    <h2>📥 Instalace</h2>
+    <p>Klikněte na tlačítko pro instalaci do Stremio:</p>
+    <a href="stremio://${req.get('host')}/manifest.json" class="install-btn">
+        🚀 Nainstalovat do Stremio
+    </a>
+    
+    <h2>⚙️ Konfigurace</h2>
+    <p>Po instalaci budete požádáni o:</p>
+    <ul>
+        <li><code>username</code> - Webshare přihlašovací jméno</li>
+        <li><code>password</code> - Webshare heslo</li>
+        <li><code>tmdb_api_key</code> - TMDB API klíč (volitelné)</li>
+    </ul>
+    
+    <h2>✨ Funkce</h2>
+    <ul>
+        <li>🎯 Automatická detekce anime přes AniList</li>
+        <li>🌐 TMDB metadata (obrázky, popisy)</li>
+        <li>📺 Podpora seriálů i filmů</li>
+        <li>🇨🇿 CZ/SK priorita</li>
+        <li>🎬 Smart filtrování podle roku a epizod</li>
+    </ul>
+    
+    <p style="margin-top: 40px; color: #999; font-size: 12px;">
+        Version ${manifest.version} | 
+        <a href="/manifest.json" style="color: #00d9ff;">manifest.json</a>
+    </p>
+</body>
+</html>
+    `);
+});
 
 // Stremio addon routes
 const addonRouter = getRouter(builder.getInterface());
