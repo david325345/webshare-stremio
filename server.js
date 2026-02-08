@@ -6,7 +6,7 @@ const xml2js = require('xml2js');
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '5.3.1', // Always use placeholder.svg as background
+    version: '5.3.2', // Added debug logging for background URL
     name: 'Webshare Anime',
     description: 'Anime a filmy z Webshare.cz s vyhledáváním',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -528,6 +528,8 @@ async function handleCatalogRequest(args) {
             
             const placeholderUrl = `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:10000'}/placeholder.svg`;
             const posterUrl = file.img || placeholderUrl;
+            
+            console.log(`Background URL: ${placeholderUrl}`); // Debug
             
             return {
                 id: `ws:${idEncoded}`,
