@@ -6,7 +6,7 @@ const xml2js = require('xml2js');
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '6.5.3', // Added negative lookahead to prevent matching season number as episode (S01E10 matching "01")
+    version: '6.5.4', // Added check for SxxE pattern to prevent matching wrong episodes (S01E10 vs S01E01)
     name: 'Webshare Anime',
     description: 'Anime a filmy z Webshare.cz s vyhledáváním',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -1060,9 +1060,9 @@ async function handleStreamRequest(args) {
                         new RegExp(`E${String(targetEpisode).padStart(2, '0')}[^0-9]`, 'i'),
                         new RegExp(`E${String(targetEpisode).padStart(2, '0')}$`, 'i'),
                         // Jen číslo s oddělovačem před I po: " 03 ", "-03-", ".03.", "_03_", "[03]", "(03)"
-                        // NEGATIVE LOOKAHEAD: Nesmí být "S" před číslem (aby S01E10 nematchovalo "01")
-                        new RegExp(`(?<!S)[\\s\\-_\\.\\[\\(]${String(targetEpisode).padStart(2, '0')}[\\s\\-_\\.\\]\\)]`, 'i'),
-                        new RegExp(`(?<!S)[\\s\\-_\\.\\[\\(]${String(targetEpisode).padStart(2, '0')}$`, 'i'),
+                        // Ale NE pokud má S nebo E bezprostředně před/za (aby S01E10 nematchovalo "01")
+                        new RegExp(`[\\s\\-_\\.\\[\\(]${String(targetEpisode).padStart(2, '0')}[\\s\\-_\\.\\]\\)]`, 'i'),
+                        new RegExp(`[\\s\\-_\\.\\[\\(]${String(targetEpisode).padStart(2, '0')}$`, 'i'),
                         // Na začátku souboru: "08 -", "08.", "08_"
                         new RegExp(`^${String(targetEpisode).padStart(2, '0')}[\\s\\-_\\.]`, 'i'),
                         // Pattern - 09. (pomlčka mezera číslo tečka)
@@ -1085,6 +1085,17 @@ async function handleStreamRequest(args) {
                     
                     const hasEpisodePattern = episodeOnlyPatterns.some(p => p.test(nameUpper));
                     if (hasEpisodePattern) {
+                        // EXTRA KONTROLA: Pokud číslo epizody je v SxxE formátu, musí být SPRÁVNÁ epizoda
+                        // např. pro E01 nesmí matchovat "S01E10" (kde "01" je součást sezóny)
+                        const seasonEpisodePattern = /S\d+E(\d+)/i;
+                        const seMatch = nameUpper.match(seasonEpisodePattern);
+                        if (seMatch) {
+                            const fileEpisode = parseInt(seMatch[1]);
+                            if (fileEpisode !== targetEpisode) {
+                                return false;  // Má SxxE formát ale špatnou epizodu
+                            }
+                        }
+                        
                         // KRITICKÁ KONTROLA: Ujistíme se, že v názvu NENÍ jiné číslo sezóny
                         // Hledáme: S1, S2, S01, S02, "2nd Season", "Season 2", "Part 2"
                         let fileSeason = null;
