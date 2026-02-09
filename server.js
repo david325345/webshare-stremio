@@ -6,7 +6,7 @@ const xml2js = require('xml2js');
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '6.12.6', // Fix: Use plain * wildcard for catalog route
+    version: '6.12.7', // Use regex route pattern for catalog (Express v5 compatibility)
     name: 'Webshare Anime',
     description: 'Anime a filmy z Webshare.cz s vyhledáváním',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -2120,17 +2120,17 @@ app.get('/:userConfig/stream/:type/:id.json', async (req, res) => {
 });
 
 // Personal catalog handler - používá config z URL path
-// Používá wildcard * pro zachycení všeho po /id/ včetně .json
-app.get('/:userConfig/catalog/:type/:id/*', async (req, res) => {
+// Používá regex pro zachycení všeho včetně .json
+app.get(/^\/([^\/]+)\/catalog\/([^\/]+)\/([^\/]+)\/(.+)$/, async (req, res) => {
     try {
-        const configB64 = req.params.userConfig;
+        const configB64 = req.params[0];
+        const type = req.params[1];
+        const id = req.params[2];
+        const extraPath = req.params[3];
         
         // Dekódujeme config
         const configJson = Buffer.from(configB64, 'base64').toString('utf8');
         const config = JSON.parse(configJson);
-        
-        // Získat extra část z URL (vše mezi /:id/ a koncem)
-        const extraPath = req.params[0]; // wildcard * se ukládá jako params[0]
         
         // Odstranit .json na konci
         const extraString = extraPath.replace(/\.json$/, '');
@@ -2149,8 +2149,8 @@ app.get('/:userConfig/catalog/:type/:id/*', async (req, res) => {
         
         // Vytvoříme args pro catalog handler
         const args = {
-            type: req.params.type,
-            id: req.params.id,
+            type: type,
+            id: id,
             extra: extra,
             config: config
         };
