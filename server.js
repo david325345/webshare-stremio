@@ -6,7 +6,7 @@ const xml2js = require('xml2js');
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '6.3.2', // Replace "/" with space instead of removing it (Fate/strange → Fate strange)
+    version: '6.5.2', // Filter out short acronyms from Kitsu names (HOTD, HSOTD)
     name: 'Webshare Anime',
     description: 'Anime a filmy z Webshare.cz s vyhledáváním',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -541,6 +541,15 @@ async function handleStreamRequest(args) {
             
             console.log('Filtered to latin names:', latinNames);
             
+            // Odfiltrovat příliš krátké názvy (akronymy jako "HOTD", "HSOTD")
+            // Ponechat jen pokud mají aspoň 8 znaků NEBO 2+ slova
+            latinNames = latinNames.filter(name => {
+                const words = name.split(/\s+/);
+                return name.length >= 8 || words.length >= 2;
+            });
+            
+            console.log('After removing acronyms:', latinNames);
+            
             if (latinNames.length === 0) {
                 console.log('No latin names available, returning empty');
                 return { streams: [] };
@@ -562,25 +571,18 @@ async function handleStreamRequest(args) {
                     
                     // Kratší varianta - první 2 slova (pro "Mushoku Tensei: Long Subtitle")
                     const words = cleanName.split(/\s+/);
-                    if (words.length > 2) {
-                        const shortName = words.slice(0, 2).join(' ');
+                    if (words.length > 3) {
+                        const shortName = words.slice(0, 3).join(' ');
                         searchQueries.push(`${shortName} ${seasonEp}`);
                         searchQueries.push(`${shortName} ${episodeOnly}`);
                         searchQueries.push(`${shortName} ${plainNumber}`);
                     }
                 }
             } else {
-                // Žádné číslo epizody - hledáme jen název
+                // Žádné číslo epizody - hledáme jen název (BEZ krátkých variant - příliš obecné)
                 for (const name of latinNames) {
                     const cleanName = name.replace(/\//g, ' ').replace(/[!?:\*]/g, '');
                     searchQueries.push(cleanName);
-                    
-                    // Kratší varianta
-                    const words = cleanName.split(/\s+/);
-                    if (words.length > 2) {
-                        const shortName = words.slice(0, 2).join(' ');
-                        searchQueries.push(shortName);
-                    }
                 }
             }
         } else if (args.id.startsWith('tt')) {
@@ -798,8 +800,8 @@ async function handleStreamRequest(args) {
                         
                         // Kratší varianta - první 2 slova
                         const words = cleanNameNoSuffix.split(/\s+/);
-                        if (words.length > 2) {
-                            const shortName = words.slice(0, 2).join(' ');
+                        if (words.length > 3) {
+                            const shortName = words.slice(0, 3).join(' ');
                             searchQueries.push(`${shortName} ${seasonEp}`);
                             searchQueries.push(`${shortName} ${episodeOnly}`);
                             searchQueries.push(`${shortName} ${plainNumber}`);
@@ -835,8 +837,8 @@ async function handleStreamRequest(args) {
                         
                         // Kratší varianta - první 2 slova
                         const words = cleanNameNoSuffix.split(/\s+/);
-                        if (words.length > 2) {
-                            const shortName = words.slice(0, 2).join(' ');
+                        if (words.length > 3) {
+                            const shortName = words.slice(0, 3).join(' ');
                             searchQueries.push(`${shortName} ${seasonEp}`);
                             searchQueries.push(`${shortName} ${episodeOnly}`);
                             searchQueries.push(`${shortName} ${plainNumber}`);
@@ -925,6 +927,25 @@ async function handleStreamRequest(args) {
             filteredResults = filteredResults.filter(result => {
                 const nameLower = result.name.toLowerCase();
                 const nameNormalized = normalizeChars(nameLower);
+                const nameUpper = result.name.toUpperCase();
+                
+                // PRO FILMY: Odmítnout soubory které vypadají jako epizody seriálů
+                // Hledáme patterny: S01E01, S1E1, 1x01, E01, - 01 -, [01], apod.
+                const episodePatterns = [
+                    /S\d+E\d+/i,           // S01E01, S1E1
+                    /\d+X\d+/i,            // 1x01, 01x01
+                    /\sE\d{2}/i,           // E01, E12
+                    /\d+-\d{2}/,           // 1-01, 2-15
+                    /\s-\s\d{2}\s/,        // " - 01 "
+                    /\[\d{2}\]/,           // [01], [12]
+                    /Episode\s*\d+/i,      // Episode 1
+                    /EP\s*\d+/i,           // EP01, EP 1
+                ];
+                
+                // Pokud soubor obsahuje episode pattern → pravděpodobně seriál → SKIP
+                if (episodePatterns.some(p => p.test(nameUpper))) {
+                    return false;
+                }
                 
                 // Kontrola že obsahuje VŠECHNA slova z ALESPOŇ JEDNOHO názvu
                 const hasTitle = searchKeywords.some(keyword => {
@@ -1128,6 +1149,27 @@ async function handleStreamRequest(args) {
                             
                             const words = keyword.split(/\s+/).filter(w => w.length > 3);
                             if (words.length === 0) return true;
+                            
+                            // SPECIÁLNÍ: Pro jednoslovné keywords (např. "Another")
+                            // vyžadujeme že slovo je blízko začátku NEBO těsně před číslem epizody
+                            if (words.length === 1) {
+                                const word = words[0];
+                                
+                                // Pattern 1: Slovo na začátku (do 5 znaků od začátku)
+                                const startPattern = new RegExp(`^.{0,5}${word}`, 'i');
+                                if (startPattern.test(nameLower)) {
+                                    return true;
+                                }
+                                
+                                // Pattern 2: Slovo těsně před S01E01, E01, - 01, apod.
+                                const beforeEpisodePattern = new RegExp(`${word}[\\s\\-\\.]*(s\\d+e\\d+|e\\d+|\\-\\s*\\d{2}|\\s\\d{2}\\s)`, 'i');
+                                if (beforeEpisodePattern.test(nameLower)) {
+                                    return true;
+                                }
+                                
+                                return false;  // Jednoslovný keyword nenalezen správně
+                            }
+                            
                             const matchedWords = words.filter(word => nameLower.includes(word)).length;
                             
                             // Vyžadujeme VŠECHNA slova (100%)
