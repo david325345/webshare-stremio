@@ -6,7 +6,7 @@ const xml2js = require('xml2js');
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '6.9.0', // Add year filtering for Kitsu anime movies (±1 year tolerance)
+    version: '6.10.1', // Word boundary check for single-word movie titles (Longlegs vs Daddy-Longlegs)
     name: 'Webshare Anime',
     description: 'Anime a filmy z Webshare.cz s vyhledáváním',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -992,6 +992,15 @@ async function handleStreamRequest(args) {
                     const words = cleanKeyword.split(/\s+/);
                     if (words.length === 0) return true;
                     
+                    // SPECIÁLNÍ PŘÍPAD: Jednoslovný název (např. "Longlegs")
+                    // Musí být samostatné slovo, ne část jiného (ne "Daddy-Longlegs")
+                    if (words.length === 1) {
+                        const word = words[0];
+                        // Regex s word boundaries: \b před a za slovem
+                        const wordBoundaryRegex = new RegExp(`\\b${word}\\b`, 'i');
+                        return wordBoundaryRegex.test(nameLower);
+                    }
+                    
                     // Normalizace slov
                     const normalizedWords = words.map(w => normalizeChars(w));
                     
@@ -1176,6 +1185,19 @@ async function handleStreamRequest(args) {
                             }
                         }
                         
+                        // Pattern 5: Římské číslice (II, III, IV, V) - např. "Strike the Blood III"
+                        // Musí mít mezeru nebo pomlčku před římskou číslicí
+                        if (!fileSeason) {
+                            const romanMatch = nameUpper.match(/[\s\-](II|III|IV|V|VI|VII|VIII|IX|X)[\s\-]/);
+                            if (romanMatch) {
+                                const romanToArabic = {
+                                    'II': 2, 'III': 3, 'IV': 4, 'V': 5,
+                                    'VI': 6, 'VII': 7, 'VIII': 8, 'IX': 9, 'X': 10
+                                };
+                                fileSeason = romanToArabic[romanMatch[1]];
+                            }
+                        }
+                        
                         if (fileSeason && fileSeason !== targetSeason) {
                             // Debug - ukázat proč bylo odmítnuto
                             if (filteredResults.indexOf(result) < 5) {
@@ -1310,6 +1332,18 @@ async function handleStreamRequest(args) {
                             
                             const partMatch = nameUpper.match(/\b(?:PART|PT)\.?\s*(\d+)/i);
                             if (partMatch && !fileSeason) fileSeason = parseInt(partMatch[1]);
+                            
+                            // Římské číslice (II, III, IV, V)
+                            if (!fileSeason) {
+                                const romanMatch = nameUpper.match(/[\s\-](II|III|IV|V|VI|VII|VIII|IX|X)[\s\-]/);
+                                if (romanMatch) {
+                                    const romanToArabic = {
+                                        'II': 2, 'III': 3, 'IV': 4, 'V': 5,
+                                        'VI': 6, 'VII': 7, 'VIII': 8, 'IX': 9, 'X': 10
+                                    };
+                                    fileSeason = romanToArabic[romanMatch[1]];
+                                }
+                            }
                             
                             if (fileSeason && fileSeason !== targetSeason) {
                                 if (debugCount < 5) {
