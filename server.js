@@ -6,7 +6,7 @@ const xml2js = require('xml2js');
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '6.12.2', // Remove enable_direct_search toggle - always enabled (simpler)
+    version: '6.12.3', // Better logging in catalog handler to debug why it's not firing
     name: 'Webshare Anime',
     description: 'Anime a filmy z Webshare.cz s vyhledáváním',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -1719,22 +1719,29 @@ builder.defineStreamHandler(handleStreamRequest);
 
 // Catalog handler pro přímé vyhledávání
 builder.defineCatalogHandler(async (args) => {
-    console.log('=== CATALOG REQUEST ===');
-    console.log('Type:', args.type);
-    console.log('ID:', args.id);
-    console.log('Extra:', args.extra);
-    
-    // Pouze pro search katalog
-    if (args.id !== 'webshare_search' || !args.extra || !args.extra.search) {
-        return { metas: [] };
-    }
-    
     try {
+        console.log('=== CATALOG REQUEST ===');
+        console.log('Type:', args.type);
+        console.log('ID:', args.id);
+        console.log('Extra:', JSON.stringify(args.extra));
+        console.log('Config present:', !!args.config);
+        
+        // Pouze pro search katalog
+        if (args.id !== 'webshare_search') {
+            console.log('Not webshare_search catalog, returning empty');
+            return { metas: [] };
+        }
+        
+        if (!args.extra || !args.extra.search) {
+            console.log('No search query in extra, returning empty');
+            return { metas: [] };
+        }
+        
         const searchQuery = args.extra.search;
-        const { username, password } = args.config;
+        const { username, password } = args.config || {};
         
         if (!username || !password) {
-            console.log('Missing credentials');
+            console.log('Missing credentials in catalog request');
             return { metas: [] };
         }
         
@@ -1748,6 +1755,7 @@ builder.defineCatalogHandler(async (args) => {
         const results = await search(searchQuery, token);
         
         if (results.length === 0) {
+            console.log('No results found');
             return { metas: [] };
         }
         
@@ -1776,7 +1784,9 @@ builder.defineCatalogHandler(async (args) => {
         return { metas };
         
     } catch (error) {
-        console.error('Search error:', error.message);
+        console.error('=== CATALOG ERROR ===');
+        console.error('Error:', error.message);
+        console.error('Stack:', error.stack);
         return { metas: [] };
     }
 });
