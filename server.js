@@ -6,7 +6,7 @@ const xml2js = require('xml2js');
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '6.12.7', // Use regex route pattern for catalog (Express v5 compatibility)
+    version: '6.12.8', // Use addonInterface.get() instead of .catalog() for SDK compatibility
     name: 'Webshare Anime',
     description: 'Anime a filmy z Webshare.cz s vyhledáváním',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -2161,9 +2161,17 @@ app.get(/^\/([^\/]+)\/catalog\/([^\/]+)\/([^\/]+)\/(.+)$/, async (req, res) => {
         console.log('ID:', args.id);
         console.log('Extra:', extra);
         
-        // Zavoláme catalog handler
+        // SDK interface má .get() metodu pro získání dat
         const addonInterface = builder.getInterface();
-        const result = await addonInterface.catalog(args);
+        
+        // Voláme přes get() metodu s resource názvem
+        const resourceName = 'catalog';
+        const result = await addonInterface.get({
+            resource: resourceName,
+            type: args.type,
+            id: args.id,
+            extra: args.extra
+        });
         
         res.setHeader('Content-Type', 'application/json');
         res.setHeader('Access-Control-Allow-Origin', '*');
