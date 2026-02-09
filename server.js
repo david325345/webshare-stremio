@@ -6,7 +6,7 @@ const xml2js = require('xml2js');
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '6.12.4', // CRITICAL FIX: Add personal catalog route (was missing!)
+    version: '6.12.5', // Fix: Route pattern syntax /:extra(*) instead of /:extra?
     name: 'Webshare Anime',
     description: 'Anime a filmy z Webshare.cz s vyhledáváním',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -2120,7 +2120,7 @@ app.get('/:userConfig/stream/:type/:id.json', async (req, res) => {
 });
 
 // Personal catalog handler - používá config z URL path
-app.get('/:userConfig/catalog/:type/:id/:extra?.json', async (req, res) => {
+app.get('/:userConfig/catalog/:type/:id/:extra(*).json', async (req, res) => {
     try {
         const configB64 = req.params.userConfig;
         
@@ -2134,7 +2134,9 @@ app.get('/:userConfig/catalog/:type/:id/:extra?.json', async (req, res) => {
             const pairs = req.params.extra.split('&');
             pairs.forEach(pair => {
                 const [key, value] = pair.split('=');
-                extra[key] = decodeURIComponent(value);
+                if (key && value) {
+                    extra[key] = decodeURIComponent(value);
+                }
             });
         }
         
@@ -2161,6 +2163,7 @@ app.get('/:userConfig/catalog/:type/:id/:extra?.json', async (req, res) => {
         res.json(result);
     } catch (error) {
         console.error('Personal catalog error:', error.message);
+        console.error('Stack:', error.stack);
         res.status(500).json({ metas: [] });
     }
 });
