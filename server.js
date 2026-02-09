@@ -6,7 +6,7 @@ const xml2js = require('xml2js');
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '6.5.4', // Added check for SxxE pattern to prevent matching wrong episodes (S01E10 vs S01E01)
+    version: '6.6.0', // Move SxxEyy check to START of filter - reject wrong episodes immediately
     name: 'Webshare Anime',
     description: 'Anime a filmy z Webshare.cz s vyhledáváním',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -1012,6 +1012,18 @@ async function handleStreamRequest(args) {
                     const nameUpper = result.name.toUpperCase();
                     const nameLower = result.name.toLowerCase();
                     const nameNormalized = normalizeChars(nameLower);
+                    
+                    // PRVNÍ KONTROLA: Pokud soubor má SxxEyy formát, MUSÍ mít správné číslo epizody
+                    const seasonEpisodeMatch = nameUpper.match(/S(\d+)E(\d+)/i);
+                    if (seasonEpisodeMatch) {
+                        const fileSeason = parseInt(seasonEpisodeMatch[1]);
+                        const fileEpisode = parseInt(seasonEpisodeMatch[2]);
+                        
+                        // Pokud má SxxEyy formát, čísla MUSÍ sedět přesně
+                        if (fileSeason !== targetSeason || fileEpisode !== targetEpisode) {
+                            return false;  // Špatná sezóna nebo epizoda v SxxEyy formátu
+                        }
+                    }
                     
                     // 1) Přesné patterny s číslem sezóny a epizody
                     const exactPatterns = [
