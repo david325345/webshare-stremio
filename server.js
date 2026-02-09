@@ -6,7 +6,7 @@ const xml2js = require('xml2js');
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '6.8.1', // Apply acronym filter only to series, not movies (fixes Paprika)
+    version: '6.9.0', // Add year filtering for Kitsu anime movies (±1 year tolerance)
     name: 'Webshare Anime',
     description: 'Anime a filmy z Webshare.cz s vyhledáváním',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -181,13 +181,20 @@ async function getKitsuNames(kitsuId) {
             }
             if (attrs.abbreviatedTitles) names.push(...attrs.abbreviatedTitles);
             
+            // Získat rok vydání
+            let year = null;
+            if (attrs.startDate) {
+                year = parseInt(attrs.startDate.substring(0, 4));
+            }
+            
             console.log('Kitsu names:', names);
-            return [...new Set(names)]; // Odstranění duplicit
+            console.log('Kitsu year:', year);
+            return { names: [...new Set(names)], year }; // Odstranění duplicit + rok
         }
     } catch (error) {
         console.error('Error getting names from Kitsu:', error.message);
     }
-    return [];
+    return { names: [], year: null };
 }
 
 // AniList GraphQL API pro získání všech variant názvů anime z názvu
@@ -503,7 +510,8 @@ async function handleStreamRequest(args) {
 
         // Získáme všechny varianty názvů
         let searchQueries = [];
-        let cinemataYear = null; // Pro filtrování filmů podle roku
+        let cinemataYear = null; // Pro filtrování filmů podle roku (TMDB)
+        let kitsuYear = null; // Pro filtrování anime filmů podle roku (Kitsu)
         
         if (args.id.startsWith('kitsu:')) {
             // Kitsu ID formát: kitsu:ID:episode (3 části, sezona je vždy 1)
@@ -524,7 +532,9 @@ async function handleStreamRequest(args) {
             }
 
             // Získáme názvy z Kitsu API
-            const names = await getKitsuNames(kitsuId);
+            const kitsuData = await getKitsuNames(kitsuId);
+            const names = kitsuData.names;
+            kitsuYear = kitsuData.year;
             
             console.log('Found names from Kitsu:', names);
 
@@ -909,8 +919,9 @@ async function handleStreamRequest(args) {
         let filteredResults = results;
         
         // Pro FILMY: filtrujeme podle roku (pokud je v názvu)
-        if (args.type === 'movie' && cinemataYear) {
-            console.log(`Filtering movies by year: ${cinemataYear} (±1 year tolerance)`);
+        if (args.type === 'movie' && (cinemataYear || kitsuYear)) {
+            const expectedYear = cinemataYear || kitsuYear;
+            console.log(`Filtering movies by year: ${expectedYear} (±1 year tolerance)`);
             filteredResults = results.filter(result => {
                 // Hledáme rok v názvu (formát: 2009, (2011), .2015., Passengers.2016)
                 // Regex hledá 4 číslice s oddělovačem PŘED (ale ne nutně PO)
@@ -924,12 +935,12 @@ async function handleStreamRequest(args) {
                     if (validYears.length > 0) {
                         // Zkontrolujeme jestli nějaký rok sedí
                         const hasMatchingYear = validYears.some(fileYear => {
-                            const yearDiff = Math.abs(fileYear - cinemataYear);
+                            const yearDiff = Math.abs(fileYear - expectedYear);
                             return yearDiff <= 1;
                         });
                         
                         if (!hasMatchingYear) {
-                            console.log(`  Filtered out: ${result.name.substring(0, 50)} (years ${validYears} vs ${cinemataYear})`);
+                            console.log(`  Filtered out: ${result.name.substring(0, 50)} (years ${validYears} vs ${expectedYear})`);
                             return false;
                         }
                     }
