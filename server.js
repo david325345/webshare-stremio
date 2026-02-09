@@ -6,7 +6,7 @@ const xml2js = require('xml2js');
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '6.10.1', // Word boundary check for single-word movie titles (Longlegs vs Daddy-Longlegs)
+    version: '6.10.2', // Fix: Word boundary for spinoff keywords (ona in Sayonara vs ONA spinoff)
     name: 'Webshare Anime',
     description: 'Anime a filmy z Webshare.cz s vyhledáváním',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -756,11 +756,14 @@ async function handleStreamRequest(args) {
                         const spinoffKeywords = ['mini anime', 'chibi', 'special', 'ova', 'ona', 'picture drama', 'recap', 'marumaru'];
                         
                         // Pokud obsahuje spinoff keyword, extrahujeme základní název (část před sufixem)
+                        // MUSÍ být word boundary - "ona" nesmí matchovat "Sayonara"
                         for (const keyword of spinoffKeywords) {
-                            const index = nameLower.indexOf(keyword);
-                            if (index > 0) {
+                            // Regex s word boundaries
+                            const keywordRegex = new RegExp(`\\b${keyword}\\b`, 'i');
+                            const match = keywordRegex.exec(nameLower);
+                            if (match && match.index > 0) {
                                 // Extrahujeme část před sufixem, odstraníme " :", " -", " ~" na konci
-                                cleanedName = name.substring(0, index).replace(/[\s:\-~●]+$/, '').trim();
+                                cleanedName = name.substring(0, match.index).replace(/[\s:\-~●]+$/, '').trim();
                                 break;
                             }
                         }
