@@ -6,7 +6,7 @@ const xml2js = require('xml2js');
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '6.11.1', // Fix: Add "ou" variants to single-name path (was only in multi-name path)
+    version: '6.11.2', // Word boundary for short keywords in series (FMP vs "F..M..P" false matches)
     name: 'Webshare Anime',
     description: 'Anime a filmy z Webshare.cz s vyhledáváním',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -1237,9 +1237,11 @@ async function handleStreamRequest(args) {
                         const hasTitle = searchKeywords.some(keyword => {
                             if (keyword.length < 2) return true;
                             
-                            // Pro krátké keywords kontrolovat přímo
+                            // Pro krátké keywords (≤4 znaky) - akronymy jako "fmp"
+                            // Musí být samostatné slovo, ne část jiného slova
                             if (keyword.length <= 4) {
-                                return nameLower.includes(keyword);
+                                const wordBoundaryRegex = new RegExp(`\\b${keyword}\\b`, 'i');
+                                return wordBoundaryRegex.test(nameLower);
                             }
                             
                             const words = keyword.split(/\s+/).filter(w => w.length > 3);
