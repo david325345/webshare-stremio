@@ -6,7 +6,7 @@ const xml2js = require('xml2js');
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '6.1.0', // Added more search query variants - plain episode numbers and without (TV) suffix
+    version: '6.1.1', // Filter out static file requests from logs
     name: 'Webshare Anime',
     description: 'Anime a filmy z Webshare.cz s vyhledáváním',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -706,7 +706,18 @@ async function handleStreamRequest(args) {
                     // Zakazujeme: á, ñ, ü, ř, č atd. (české, španělské, německé...)
                     const englishRomajiNames = anilistNames.filter(name => {
                         // Jen základní ASCII znaky (bez diakritiky)
-                        return /^[a-zA-Z0-9\s\-':!\[\]\(\)\.&]+$/.test(name);
+                        if (!/^[a-zA-Z0-9\s\-':!\[\]\(\)\.&]+$/.test(name)) {
+                            return false;
+                        }
+                        
+                        // Odfiltrovat spin-offy a speciály
+                        const nameLower = name.toLowerCase();
+                        const spinoffKeywords = ['mini anime', 'chibi', 'special', 'ova', 'ona', 'picture drama', 'recap'];
+                        if (spinoffKeywords.some(keyword => nameLower.includes(keyword))) {
+                            return false;
+                        }
+                        
+                        return true;
                     });
                     
                     console.log('Filtered to English/Romaji names:', englishRomajiNames);
@@ -1487,7 +1498,10 @@ const app = express();
 
 // CORS middleware
 app.use((req, res, next) => {
-    console.log(`📥 ${req.method} ${req.url}`); // LOG KAŽDÉHO REQUESTU
+    // Log pouze API requesty, ne statické soubory
+    if (!req.url.endsWith('.svg') && !req.url.endsWith('.png') && !req.url.endsWith('.jpg')) {
+        console.log(`📥 ${req.method} ${req.url}`);
+    }
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
