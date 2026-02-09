@@ -6,7 +6,7 @@ const xml2js = require('xml2js');
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '6.12.3', // Better logging in catalog handler to debug why it's not firing
+    version: '6.12.4', // CRITICAL FIX: Add personal catalog route (was missing!)
     name: 'Webshare Anime',
     description: 'Anime a filmy z Webshare.cz s vyhledáváním',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -2116,6 +2116,52 @@ app.get('/:userConfig/stream/:type/:id.json', async (req, res) => {
     } catch (error) {
         console.error('Personal stream error:', error.message);
         res.status(500).json({ streams: [] });
+    }
+});
+
+// Personal catalog handler - používá config z URL path
+app.get('/:userConfig/catalog/:type/:id/:extra?.json', async (req, res) => {
+    try {
+        const configB64 = req.params.userConfig;
+        
+        // Dekódujeme config
+        const configJson = Buffer.from(configB64, 'base64').toString('utf8');
+        const config = JSON.parse(configJson);
+        
+        // Parse extra params (např. search=frieren)
+        const extra = {};
+        if (req.params.extra) {
+            const pairs = req.params.extra.split('&');
+            pairs.forEach(pair => {
+                const [key, value] = pair.split('=');
+                extra[key] = decodeURIComponent(value);
+            });
+        }
+        
+        // Vytvoříme args pro catalog handler
+        const args = {
+            type: req.params.type,
+            id: req.params.id,
+            extra: extra,
+            config: config
+        };
+        
+        console.log('=== PERSONAL CATALOG REQUEST ===');
+        console.log('User:', config.username);
+        console.log('Type:', args.type);
+        console.log('ID:', args.id);
+        console.log('Extra:', extra);
+        
+        // Zavoláme catalog handler
+        const addonInterface = builder.getInterface();
+        const result = await addonInterface.catalog(args);
+        
+        res.setHeader('Content-Type', 'application/json');
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        res.json(result);
+    } catch (error) {
+        console.error('Personal catalog error:', error.message);
+        res.status(500).json({ metas: [] });
     }
 });
 
