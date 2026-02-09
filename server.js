@@ -6,7 +6,7 @@ const xml2js = require('xml2js');
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '6.11.2', // Word boundary for short keywords in series (FMP vs "F..M..P" false matches)
+    version: '6.11.3', // Fix: Keywords with no long words (gto - the) now use word boundary, not auto-pass
     name: 'Webshare Anime',
     description: 'Anime a filmy z Webshare.cz s vyhledáváním',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -1245,7 +1245,16 @@ async function handleStreamRequest(args) {
                             }
                             
                             const words = keyword.split(/\s+/).filter(w => w.length > 3);
-                            if (words.length === 0) return true;
+                            
+                            // Pokud keyword nemá žádná slova delší než 3 znaky (např. "gto - the")
+                            // použijeme celý keyword s word boundary check
+                            if (words.length === 0) {
+                                // Odstraníme pomlčky a extra mezery pro matching
+                                const cleanKeyword = keyword.replace(/\s*-\s*/g, ' ').trim();
+                                // Word boundary regex pro celý keyword
+                                const wordBoundaryRegex = new RegExp(`\\b${cleanKeyword.replace(/\s+/g, '.*')}\\b`, 'i');
+                                return wordBoundaryRegex.test(nameLower);
+                            }
                             
                             // SPECIÁLNÍ: Pro jednoslovné keywords (např. "Another")
                             // vyžadujeme že slovo je blízko začátku NEBO těsně před číslem epizody
