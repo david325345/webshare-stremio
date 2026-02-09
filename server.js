@@ -6,7 +6,7 @@ const xml2js = require('xml2js');
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '6.12.10', // Call catalog handler directly instead of through SDK interface
+    version: '6.12.11', // Add 'webshare' to idPrefixes so Stremio requests streams for webshare: IDs
     name: 'Webshare Anime',
     description: 'Anime a filmy z Webshare.cz s vyhledáváním',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -20,7 +20,7 @@ const manifest = {
             extra: [{ name: 'search', isRequired: true }]
         }
     ],
-    idPrefixes: ['tt', 'kitsu'],
+    idPrefixes: ['tt', 'kitsu', 'webshare'],
     behaviorHints: {
         configurable: true,
         configurationRequired: false,
