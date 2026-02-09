@@ -6,7 +6,7 @@ const xml2js = require('xml2js');
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '6.12.8', // Use addonInterface.get() instead of .catalog() for SDK compatibility
+    version: '6.12.10', // Call catalog handler directly instead of through SDK interface
     name: 'Webshare Anime',
     description: 'Anime a filmy z Webshare.cz s vyhledáváním',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -1717,8 +1717,8 @@ async function handleStreamRequest(args) {
 // Registrujeme handler do builderu
 builder.defineStreamHandler(handleStreamRequest);
 
-// Catalog handler pro přímé vyhledávání
-builder.defineCatalogHandler(async (args) => {
+// Catalog handler funkce - použita builderem i personal routes
+async function handleCatalogRequest(args) {
     try {
         console.log('=== CATALOG REQUEST ===');
         console.log('Type:', args.type);
@@ -1789,7 +1789,10 @@ builder.defineCatalogHandler(async (args) => {
         console.error('Stack:', error.stack);
         return { metas: [] };
     }
-});
+}
+
+// Catalog handler pro přímé vyhledávání
+builder.defineCatalogHandler(handleCatalogRequest);
 
 
 // ========== KEEP-ALIVE CRON JOB ==========
@@ -2161,17 +2164,8 @@ app.get(/^\/([^\/]+)\/catalog\/([^\/]+)\/([^\/]+)\/(.+)$/, async (req, res) => {
         console.log('ID:', args.id);
         console.log('Extra:', extra);
         
-        // SDK interface má .get() metodu pro získání dat
-        const addonInterface = builder.getInterface();
-        
-        // Voláme přes get() metodu s resource názvem
-        const resourceName = 'catalog';
-        const result = await addonInterface.get({
-            resource: resourceName,
-            type: args.type,
-            id: args.id,
-            extra: args.extra
-        });
+        // Zavoláme catalog handler přímo
+        const result = await handleCatalogRequest(args);
         
         res.setHeader('Content-Type', 'application/json');
         res.setHeader('Access-Control-Allow-Origin', '*');
