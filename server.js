@@ -6,7 +6,7 @@ const xml2js = require('xml2js');
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '6.2.2', // Added pattern for "Season-Episode" format (1-01, 2-15)
+    version: '6.2.3', // Added short name variants for Kitsu (first 2 words)
     name: 'Webshare Anime',
     description: 'Anime a filmy z Webshare.cz s vyhledáváním',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -555,18 +555,32 @@ async function handleStreamRequest(args) {
                 for (const name of latinNames) {
                     const cleanName = name.replace(/[!?:\*]/g, '');
                     
-                    // S01E01
+                    // Plný název
                     searchQueries.push(`${cleanName} ${seasonEp}`);
-                    // E01
                     searchQueries.push(`${cleanName} ${episodeOnly}`);
-                    // 01
                     searchQueries.push(`${cleanName} ${plainNumber}`);
+                    
+                    // Kratší varianta - první 2 slova (pro "Mushoku Tensei: Long Subtitle")
+                    const words = cleanName.split(/\s+/);
+                    if (words.length > 2) {
+                        const shortName = words.slice(0, 2).join(' ');
+                        searchQueries.push(`${shortName} ${seasonEp}`);
+                        searchQueries.push(`${shortName} ${episodeOnly}`);
+                        searchQueries.push(`${shortName} ${plainNumber}`);
+                    }
                 }
             } else {
                 // Žádné číslo epizody - hledáme jen název
                 for (const name of latinNames) {
                     const cleanName = name.replace(/[!?:\*]/g, '');
                     searchQueries.push(cleanName);
+                    
+                    // Kratší varianta
+                    const words = cleanName.split(/\s+/);
+                    if (words.length > 2) {
+                        const shortName = words.slice(0, 2).join(' ');
+                        searchQueries.push(shortName);
+                    }
                 }
             }
         } else if (args.id.startsWith('tt')) {
