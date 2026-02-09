@@ -6,7 +6,7 @@ const xml2js = require('xml2js');
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '6.12.5', // Fix: Route pattern syntax /:extra(*) instead of /:extra?
+    version: '6.12.6', // Fix: Use plain * wildcard for catalog route
     name: 'Webshare Anime',
     description: 'Anime a filmy z Webshare.cz s vyhledáváním',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -2120,7 +2120,8 @@ app.get('/:userConfig/stream/:type/:id.json', async (req, res) => {
 });
 
 // Personal catalog handler - používá config z URL path
-app.get('/:userConfig/catalog/:type/:id/:extra(*).json', async (req, res) => {
+// Používá wildcard * pro zachycení všeho po /id/ včetně .json
+app.get('/:userConfig/catalog/:type/:id/*', async (req, res) => {
     try {
         const configB64 = req.params.userConfig;
         
@@ -2128,10 +2129,16 @@ app.get('/:userConfig/catalog/:type/:id/:extra(*).json', async (req, res) => {
         const configJson = Buffer.from(configB64, 'base64').toString('utf8');
         const config = JSON.parse(configJson);
         
+        // Získat extra část z URL (vše mezi /:id/ a koncem)
+        const extraPath = req.params[0]; // wildcard * se ukládá jako params[0]
+        
+        // Odstranit .json na konci
+        const extraString = extraPath.replace(/\.json$/, '');
+        
         // Parse extra params (např. search=frieren)
         const extra = {};
-        if (req.params.extra) {
-            const pairs = req.params.extra.split('&');
+        if (extraString) {
+            const pairs = extraString.split('&');
             pairs.forEach(pair => {
                 const [key, value] = pair.split('=');
                 if (key && value) {
