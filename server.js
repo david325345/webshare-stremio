@@ -6,7 +6,7 @@ const xml2js = require('xml2js');
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '6.2.0', // Improved Kitsu search - use all names and multiple variants
+    version: '6.2.1', // Added detection for standalone season numbers in titles (e.g. "Title 2 - 01")
     name: 'Webshare Anime',
     description: 'Anime a filmy z Webshare.cz s vyhledáváním',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -1050,6 +1050,20 @@ async function handleStreamRequest(args) {
                         const partMatch = nameUpper.match(/\b(?:PART|PT)\.?\s*(\d+)/i);
                         if (partMatch && !fileSeason) { // Jen pokud jsme nenašli Season
                             fileSeason = parseInt(partMatch[1]);
+                        }
+                        
+                        // Pattern 4: Samostatné " 2 " v názvu (např. "Ansatsu Kyoushitsu 2 - 01")
+                        // Musí být: mezera+číslo+mezera nebo mezera+číslo+pomlčka
+                        // Ignorujeme čísla >10 (mohlo by být rok nebo epizoda)
+                        if (!fileSeason) {
+                            const standaloneMatch = nameUpper.match(/\s(\d{1})[\s\-]/);
+                            if (standaloneMatch) {
+                                const num = parseInt(standaloneMatch[1]);
+                                // Jen pokud je to 2-9 (ne 1, protože 1 je default)
+                                if (num >= 2 && num <= 9) {
+                                    fileSeason = num;
+                                }
+                            }
                         }
                         
                         if (fileSeason && fileSeason !== targetSeason) {
