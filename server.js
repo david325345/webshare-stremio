@@ -6,7 +6,7 @@ const xml2js = require('xml2js');
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '6.6.0', // Move SxxEyy check to START of filter - reject wrong episodes immediately
+    version: '6.7.0', // Normalize diacritics in search queries (Sósó → Sousou)
     name: 'Webshare Anime',
     description: 'Anime a filmy z Webshare.cz s vyhledáváním',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -562,7 +562,7 @@ async function handleStreamRequest(args) {
                 const plainNumber = String(episode).padStart(2, '0');
                 
                 for (const name of latinNames) {
-                    const cleanName = name.replace(/\//g, ' ').replace(/[!?:\*]/g, '');
+                    const cleanName = name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\//g, ' ').replace(/[!?:\*]/g, '');
                     
                     // Plný název
                     searchQueries.push(`${cleanName} ${seasonEp}`);
@@ -581,7 +581,7 @@ async function handleStreamRequest(args) {
             } else {
                 // Žádné číslo epizody - hledáme jen název (BEZ krátkých variant - příliš obecné)
                 for (const name of latinNames) {
-                    const cleanName = name.replace(/\//g, ' ').replace(/[!?:\*]/g, '');
+                    const cleanName = name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\//g, ' ').replace(/[!?:\*]/g, '');
                     searchQueries.push(cleanName);
                 }
             }
@@ -752,10 +752,15 @@ async function handleStreamRequest(args) {
                         // Pro anime používáme JEN anglické/romaji názvy
                         names = englishRomajiNames;
                     } else {
-                        // Žádné anglické názvy z AniList - použijeme anglický z TMDB
-                        console.log('No English/Romaji names from AniList, using English from TMDB');
+                        // Žádné anglické názvy z AniList - použijeme anglický z TMDB + romaji
+                        console.log('No English/Romaji names from AniList, using English from TMDB + original romaji');
                         const englishName = tmdbNames.length > 1 ? tmdbNames[tmdbNames.length - 1] : tmdbNames[0];
                         names = [englishName];
+                        
+                        // Přidat také romaji název z TMDB (pokud je jiný než anglický)
+                        if (tmdbNames.length > 1 && tmdbNames[0] !== englishName) {
+                            names.push(tmdbNames[0]);  // Přidat romaji název
+                        }
                     }
                 }
             }
@@ -782,8 +787,8 @@ async function handleStreamRequest(args) {
                     
                     // Použijeme jen první 3 názvy (romaji + english + hlavní synonym)
                     for (const name of names.slice(0, 3)) {
-                        // Vyčistíme speciální znaky
-                        const cleanName = name.replace(/\//g, ' ').replace(/[!?:\*]/g, '');
+                        // Vyčistíme speciální znaky a diakritiku
+                        const cleanName = name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\//g, ' ').replace(/[!?:\*]/g, '');
                         const cleanNameNoSuffix = cleanName.replace(/\s*\(TV\)\s*$/i, '').trim();
                         
                         searchQueries.push(`${cleanName} ${seasonEp}`);
@@ -819,7 +824,7 @@ async function handleStreamRequest(args) {
                     const episodeOnly = `E${String(episode).padStart(2, '0')}`;
                     
                     for (const name of names) {
-                        const cleanName = name.replace(/\//g, ' ').replace(/[!?:\*]/g, '');
+                        const cleanName = name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\//g, ' ').replace(/[!?:\*]/g, '');
                         const cleanNameNoSuffix = cleanName.replace(/\s*\(TV\)\s*$/i, '').trim(); // Odstranit "(TV)" suffix
                         
                         // Standardní formát S01E04
