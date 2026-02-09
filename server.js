@@ -6,7 +6,7 @@ const xml2js = require('xml2js');
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '6.12.0', // Add direct search feature with custom backdrop
+    version: '6.12.2', // Remove enable_direct_search toggle - always enabled (simpler)
     name: 'Webshare Anime',
     description: 'Anime a filmy z Webshare.cz s vyhledáváním',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -16,13 +16,7 @@ const manifest = {
         {
             type: 'movie',
             id: 'webshare_search',
-            name: 'Webshare Search',
-            extra: [{ name: 'search', isRequired: true }]
-        },
-        {
-            type: 'series',
-            id: 'webshare_search',
-            name: 'Webshare Search',
+            name: 'Webshare Hledat',
             extra: [{ name: 'search', isRequired: true }]
         }
     ],
@@ -52,18 +46,19 @@ const manifest = {
             title: 'TMDB API Key (optional - for Czech names)',
             required: false,
             default: ''
-        },
-        {
-            key: 'enable_direct_search',
-            type: 'boolean',
-            title: 'Povolit přímé vyhledávání (Search)',
-            required: false,
-            default: 'true'
         }
     ]
 };
 
 const builder = new addonBuilder(manifest);
+
+// Helper funkce pro formátování velikosti
+function formatBytes(bytes) {
+    if (!bytes || bytes === '0') return '';
+    const sizes = ['B', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(1024));
+    return Math.round(bytes / Math.pow(1024, i) * 100) / 100 + ' ' + sizes[i];
+}
 
 // Nastavení Express pro servírování statických souborů (logo)
 const express = require('express');
@@ -1729,12 +1724,6 @@ builder.defineCatalogHandler(async (args) => {
     console.log('ID:', args.id);
     console.log('Extra:', args.extra);
     
-    // Pokud není zapnuté direct search, vrátit prázdné
-    if (!args.config || args.config.enable_direct_search !== 'true') {
-        console.log('Direct search disabled');
-        return { metas: [] };
-    }
-    
     // Pouze pro search katalog
     if (args.id !== 'webshare_search' || !args.extra || !args.extra.search) {
         return { metas: [] };
@@ -1778,7 +1767,7 @@ builder.defineCatalogHandler(async (args) => {
                 name: file.name,
                 poster: backdropUrl,
                 background: backdropUrl,
-                description: `Webshare: ${formatBytes(file.size)}`,
+                description: `Webshare: ${formatBytes(parseInt(file.size))}`,
                 releaseInfo: file.name
             };
         });
