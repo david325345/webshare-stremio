@@ -6,7 +6,7 @@ const xml2js = require('xml2js');
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '6.1.1', // Filter out static file requests from logs
+    version: '6.1.2', // Added "marumaru" to spinoff filter keywords
     name: 'Webshare Anime',
     description: 'Anime a filmy z Webshare.cz s vyhledáváním',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -712,7 +712,7 @@ async function handleStreamRequest(args) {
                         
                         // Odfiltrovat spin-offy a speciály
                         const nameLower = name.toLowerCase();
-                        const spinoffKeywords = ['mini anime', 'chibi', 'special', 'ova', 'ona', 'picture drama', 'recap'];
+                        const spinoffKeywords = ['mini anime', 'chibi', 'special', 'ova', 'ona', 'picture drama', 'recap', 'marumaru'];
                         if (spinoffKeywords.some(keyword => nameLower.includes(keyword))) {
                             return false;
                         }
