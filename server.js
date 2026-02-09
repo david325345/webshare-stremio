@@ -6,7 +6,7 @@ const xml2js = require('xml2js');
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '6.1.2', // Added "marumaru" to spinoff filter keywords
+    version: '6.2.0', // Improved Kitsu search - use all names and multiple variants
     name: 'Webshare Anime',
     description: 'Anime a filmy z Webshare.cz s vyhledáváním',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -546,18 +546,28 @@ async function handleStreamRequest(args) {
                 return { streams: [] };
             }
 
-            // Použijeme jen první (hlavní) název pro rychlost
-            const mainName = latinNames[0];
-            
-            // Vyčistíme speciální znaky z názvu
-            const cleanName = mainName.replace(/[!?:\*]/g, '');
-            
+            // Použijeme všechny latinské názvy pro lepší pokrytí
             if (args.type === 'series' && episode) {
                 const seasonEp = `S${String(season).padStart(2, '0')}E${String(episode).padStart(2, '0')}`;
-                searchQueries.push(`${cleanName} ${seasonEp}`);
+                const episodeOnly = `E${String(episode).padStart(2, '0')}`;
+                const plainNumber = String(episode).padStart(2, '0');
+                
+                for (const name of latinNames) {
+                    const cleanName = name.replace(/[!?:\*]/g, '');
+                    
+                    // S01E01
+                    searchQueries.push(`${cleanName} ${seasonEp}`);
+                    // E01
+                    searchQueries.push(`${cleanName} ${episodeOnly}`);
+                    // 01
+                    searchQueries.push(`${cleanName} ${plainNumber}`);
+                }
             } else {
                 // Žádné číslo epizody - hledáme jen název
-                searchQueries.push(cleanName);
+                for (const name of latinNames) {
+                    const cleanName = name.replace(/[!?:\*]/g, '');
+                    searchQueries.push(cleanName);
+                }
             }
         } else if (args.id.startsWith('tt')) {
             const parts = args.id.split(':');
