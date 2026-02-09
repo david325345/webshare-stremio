@@ -6,7 +6,7 @@ const xml2js = require('xml2js');
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '6.11.3', // Fix: Keywords with no long words (gto - the) now use word boundary, not auto-pass
+    version: '6.11.5', // Stricter matching for short keywords - no auto-pass, must match full keyword
     name: 'Webshare Anime',
     description: 'Anime a filmy z Webshare.cz s vyhledáváním',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -1246,14 +1246,13 @@ async function handleStreamRequest(args) {
                             
                             const words = keyword.split(/\s+/).filter(w => w.length > 3);
                             
-                            // Pokud keyword nemá žádná slova delší než 3 znaky (např. "gto - the")
-                            // použijeme celý keyword s word boundary check
+                            // Pokud keyword nemá žádná slova delší než 3 znaky (např. "gto - the", "gto")
+                            // NEPOVOLUJEME auto-pass - musí matchovat celý keyword
                             if (words.length === 0) {
-                                // Odstraníme pomlčky a extra mezery pro matching
-                                const cleanKeyword = keyword.replace(/\s*-\s*/g, ' ').trim();
-                                // Word boundary regex pro celý keyword
-                                const wordBoundaryRegex = new RegExp(`\\b${cleanKeyword.replace(/\s+/g, '.*')}\\b`, 'i');
-                                return wordBoundaryRegex.test(nameLower);
+                                // Celý keyword musí být přítomen jako substring (bez pomlček)
+                                const cleanKeyword = keyword.replace(/[\s\-]+/g, '').toLowerCase();
+                                const cleanName = nameLower.replace(/[\s\-]+/g, '');
+                                return cleanName.includes(cleanKeyword);
                             }
                             
                             // SPECIÁLNÍ: Pro jednoslovné keywords (např. "Another")
@@ -1518,13 +1517,7 @@ async function handleStreamRequest(args) {
                 }
             }
             
-            // 1. JAZYK (CZ/SK má přednost)
-            const aLang = hasLanguage(a.name);
-            const bLang = hasLanguage(b.name);
-            if (aLang && !bLang) return -1;
-            if (!aLang && bLang) return 1;
-            
-            // 2. RELEVANCE - kolik slov z názvu se shoduje
+            // 1. RELEVANCE - kolik slov z názvu se shoduje (NEJDŮLEŽITĚJŠÍ!)
             const aScore = searchKeywords.reduce((score, keyword) => {
                 const words = keyword.split(/\s+/).filter(w => w.length >= 3);
                 const matches = words.filter(word => aName.includes(word)).length;
@@ -1538,6 +1531,12 @@ async function handleStreamRequest(args) {
             }, 0);
             
             if (aScore !== bScore) return bScore - aScore;
+            
+            // 2. JAZYK (CZ/SK má přednost)
+            const aLang = hasLanguage(a.name);
+            const bLang = hasLanguage(b.name);
+            if (aLang && !bLang) return -1;
+            if (!aLang && bLang) return 1;
             
             // 3. KVALITA (4K > 1080P > 720P > 480P)
             const aQuality = getQualityScore(a.name);
