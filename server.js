@@ -6,7 +6,7 @@ const xml2js = require('xml2js');
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '6.2.1', // Added detection for standalone season numbers in titles (e.g. "Title 2 - 01")
+    version: '6.2.2', // Added pattern for "Season-Episode" format (1-01, 2-15)
     name: 'Webshare Anime',
     description: 'Anime a filmy z Webshare.cz s vyhledáváním',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -968,6 +968,8 @@ async function handleStreamRequest(args) {
                         `S${targetSeason}E${targetEpisode}`,  // S5E3
                         `${String(targetSeason).padStart(2, '0')}X${String(targetEpisode).padStart(2, '0')}`,  // 05x03
                         `${targetSeason}X${String(targetEpisode).padStart(2, '0')}`,  // 5x03
+                        // Pattern Season-Episode: "1-01", "2-15" (musí mít pomlčku mezi)
+                        `${targetSeason}-${String(targetEpisode).padStart(2, '0')}`,  // 1-01, 2-15
                     ];
                     
                     // Pokud název obsahuje přesný pattern, akceptujeme
