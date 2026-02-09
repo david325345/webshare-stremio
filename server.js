@@ -6,11 +6,11 @@ const xml2js = require('xml2js');
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '6.12.11', // Add 'webshare' to idPrefixes so Stremio requests streams for webshare: IDs
+    version: '6.13.0', // MAJOR: Add meta handler for webshare: IDs - enables direct search to work!
     name: 'Webshare Anime',
     description: 'Anime a filmy z Webshare.cz s vyhledáváním',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
-    resources: ['stream', 'catalog'],
+    resources: ['stream', 'catalog', 'meta'],
     types: ['series', 'movie'],
     catalogs: [
         {
@@ -140,6 +140,33 @@ async function getFileLink(ident, token) {
         return resp.body.children.find(el => el.name == 'link').value;
     }
     return null;
+}
+
+async function getFileInfo(ident, token) {
+    const params = `ident=${encodeURIComponent(ident)}&wst=${encodeURIComponent(token)}`;
+    const resp = await needle('post', 'https://webshare.cz/api/file_info/', params, { headers });
+    
+    if (!resp.body || !resp.body.children) {
+        return null;
+    }
+    
+    const children = resp.body.children;
+    const name = children.find(el => el.name == 'name')?.value;
+    const size = children.find(el => el.name == 'size')?.value;
+    const positive_votes = children.find(el => el.name == 'positive_votes')?.value || '0';
+    const negative_votes = children.find(el => el.name == 'negative_votes')?.value || '0';
+    const description = children.find(el => el.name == 'description')?.value || '';
+    const img = children.find(el => el.name == 'img')?.value;
+    
+    return {
+        ident,
+        name,
+        size: parseInt(size, 10),
+        positive_votes: parseInt(positive_votes),
+        negative_votes: parseInt(negative_votes),
+        description,
+        img
+    };
 }
 
 // Formátování velikosti souboru
@@ -528,7 +555,7 @@ async function handleStreamRequest(args) {
             const fileIdent = args.id.substring(9); // Remove "webshare:" prefix
             
             // Získat link pro tento soubor
-            const link = await getLink(fileIdent, token);
+            const link = await getFileLink(fileIdent, token);
             
             if (!link) {
                 console.log('No link available for file:', fileIdent);
@@ -1776,7 +1803,8 @@ async function handleCatalogRequest(args) {
                 poster: backdropUrl,
                 background: backdropUrl,
                 description: `Webshare: ${formatBytes(parseInt(file.size))}`,
-                releaseInfo: file.name
+                releaseInfo: file.name,
+                links: []  // Důležité - prázdné links znamená že addon poskytne streamy
             };
         });
         
@@ -1793,6 +1821,68 @@ async function handleCatalogRequest(args) {
 
 // Catalog handler pro přímé vyhledávání
 builder.defineCatalogHandler(handleCatalogRequest);
+
+// Meta handler funkce pro webshare: ID
+async function handleMetaRequest(args) {
+    try {
+        console.log('=== META REQUEST ===');
+        console.log('Type:', args.type);
+        console.log('ID:', args.id);
+        
+        // Pouze pro webshare: ID
+        if (!args.id.startsWith('webshare:')) {
+            return { meta: {} };
+        }
+        
+        const fileIdent = args.id.substring(9); // Remove "webshare:" prefix
+        const { username, password } = args.config || {};
+        
+        if (!username || !password) {
+            console.log('Missing credentials in meta request');
+            return { meta: {} };
+        }
+        
+        console.log('Getting file info for:', fileIdent);
+        
+        // Přihlásit se
+        const saltedPassword = await saltPassword(username, password);
+        const token = await login(username, saltedPassword);
+        
+        // Získat info o souboru
+        const fileInfo = await getFileInfo(fileIdent, token);
+        
+        if (!fileInfo) {
+            console.log('File info not found');
+            return { meta: {} };
+        }
+        
+        // Backdrop URL
+        const backdropUrl = 'https://raw.githubusercontent.com/david325345/webshare-stremio/main/public/webshare-backdrop.jpg';
+        
+        console.log('Returning meta for:', fileInfo.name);
+        
+        return {
+            meta: {
+                id: args.id,
+                type: args.type,
+                name: fileInfo.name,
+                poster: fileInfo.img || backdropUrl,
+                background: fileInfo.img || backdropUrl,
+                description: `${fileInfo.description}\n\n👍 ${fileInfo.positive_votes} 👎 ${fileInfo.negative_votes}\n💾 ${formatBytes(fileInfo.size)}`,
+                website: `https://webshare.cz/#/file/${fileIdent}`
+            }
+        };
+        
+    } catch (error) {
+        console.error('=== META ERROR ===');
+        console.error('Error:', error.message);
+        console.error('Stack:', error.stack);
+        return { meta: {} };
+    }
+}
+
+// Meta handler pro webshare: ID
+builder.defineMetaHandler(handleMetaRequest);
 
 
 // ========== KEEP-ALIVE CRON JOB ==========
@@ -2174,6 +2264,40 @@ app.get(/^\/([^\/]+)\/catalog\/([^\/]+)\/([^\/]+)\/(.+)$/, async (req, res) => {
         console.error('Personal catalog error:', error.message);
         console.error('Stack:', error.stack);
         res.status(500).json({ metas: [] });
+    }
+});
+
+// Personal meta handler - používá config z URL path
+app.get('/:userConfig/meta/:type/:id.json', async (req, res) => {
+    try {
+        const configB64 = req.params.userConfig;
+        
+        // Dekódujeme config
+        const configJson = Buffer.from(configB64, 'base64').toString('utf8');
+        const config = JSON.parse(configJson);
+        
+        // Vytvoříme args pro meta handler
+        const args = {
+            type: req.params.type,
+            id: req.params.id,
+            config: config
+        };
+        
+        console.log('=== PERSONAL META REQUEST ===');
+        console.log('User:', config.username);
+        console.log('Type:', args.type);
+        console.log('ID:', args.id);
+        
+        // Zavoláme meta handler přímo
+        const result = await handleMetaRequest(args);
+        
+        res.setHeader('Content-Type', 'application/json');
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        res.json(result);
+    } catch (error) {
+        console.error('Personal meta error:', error.message);
+        console.error('Stack:', error.stack);
+        res.status(500).json({ meta: {} });
     }
 });
 
