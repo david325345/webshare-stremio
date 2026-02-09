@@ -6,13 +6,26 @@ const xml2js = require('xml2js');
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '6.11.5', // Stricter matching for short keywords - no auto-pass, must match full keyword
+    version: '6.12.0', // Add direct search feature with custom backdrop
     name: 'Webshare Anime',
     description: 'Anime a filmy z Webshare.cz s vyhledáváním',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
-    resources: ['stream'],
+    resources: ['stream', 'catalog'],
     types: ['series', 'movie'],
-    catalogs: [],
+    catalogs: [
+        {
+            type: 'movie',
+            id: 'webshare_search',
+            name: 'Webshare Search',
+            extra: [{ name: 'search', isRequired: true }]
+        },
+        {
+            type: 'series',
+            id: 'webshare_search',
+            name: 'Webshare Search',
+            extra: [{ name: 'search', isRequired: true }]
+        }
+    ],
     idPrefixes: ['tt', 'kitsu'],
     behaviorHints: {
         configurable: true,
@@ -39,6 +52,13 @@ const manifest = {
             title: 'TMDB API Key (optional - for Czech names)',
             required: false,
             default: ''
+        },
+        {
+            key: 'enable_direct_search',
+            type: 'boolean',
+            title: 'Povolit přímé vyhledávání (Search)',
+            required: false,
+            default: 'true'
         }
     ]
 };
@@ -507,7 +527,29 @@ async function handleStreamRequest(args) {
         const saltedPassword = await saltPassword(username, password);
         const token = await login(username, saltedPassword);
         
-
+        // NOVÉ: Handling pro webshare: ID (z direct search)
+        if (args.id.startsWith('webshare:')) {
+            console.log('Direct search file request');
+            const fileIdent = args.id.substring(9); // Remove "webshare:" prefix
+            
+            // Získat link pro tento soubor
+            const link = await getLink(fileIdent, token);
+            
+            if (!link) {
+                console.log('No link available for file:', fileIdent);
+                return { streams: [] };
+            }
+            
+            // Vrátit stream
+            return {
+                streams: [{
+                    name: 'Webshare 📺',
+                    title: fileIdent,
+                    url: link
+                }]
+            };
+        }
+        
         // Získáme všechny varianty názvů
         let searchQueries = [];
         let cinemataYear = null; // Pro filtrování filmů podle roku (TMDB)
@@ -1679,6 +1721,76 @@ async function handleStreamRequest(args) {
 
 // Registrujeme handler do builderu
 builder.defineStreamHandler(handleStreamRequest);
+
+// Catalog handler pro přímé vyhledávání
+builder.defineCatalogHandler(async (args) => {
+    console.log('=== CATALOG REQUEST ===');
+    console.log('Type:', args.type);
+    console.log('ID:', args.id);
+    console.log('Extra:', args.extra);
+    
+    // Pokud není zapnuté direct search, vrátit prázdné
+    if (!args.config || args.config.enable_direct_search !== 'true') {
+        console.log('Direct search disabled');
+        return { metas: [] };
+    }
+    
+    // Pouze pro search katalog
+    if (args.id !== 'webshare_search' || !args.extra || !args.extra.search) {
+        return { metas: [] };
+    }
+    
+    try {
+        const searchQuery = args.extra.search;
+        const { username, password } = args.config;
+        
+        if (!username || !password) {
+            console.log('Missing credentials');
+            return { metas: [] };
+        }
+        
+        console.log('Direct search query:', searchQuery);
+        
+        // Přihlásit se
+        const saltedPassword = await saltPassword(username, password);
+        const token = await login(username, saltedPassword);
+        
+        // Vyhledat na Webshare
+        const results = await search(searchQuery, token);
+        
+        if (results.length === 0) {
+            return { metas: [] };
+        }
+        
+        console.log(`Found ${results.length} files for search: ${searchQuery}`);
+        
+        // Backdrop URL
+        const backdropUrl = 'https://raw.githubusercontent.com/david325345/webshare-stremio/main/public/webshare-backdrop.jpg';
+        
+        // Vytvořit metas - každý soubor jako samostatný meta
+        const metas = results.slice(0, 50).map((file, index) => {
+            // Generovat unikátní ID pro každý soubor
+            const metaId = `webshare:${file.ident}`;
+            
+            return {
+                id: metaId,
+                type: args.type,
+                name: file.name,
+                poster: backdropUrl,
+                background: backdropUrl,
+                description: `Webshare: ${formatBytes(file.size)}`,
+                releaseInfo: file.name
+            };
+        });
+        
+        console.log(`Returning ${metas.length} metas`);
+        return { metas };
+        
+    } catch (error) {
+        console.error('Search error:', error.message);
+        return { metas: [] };
+    }
+});
 
 
 // ========== KEEP-ALIVE CRON JOB ==========
