@@ -6,7 +6,7 @@ const xml2js = require('xml2js');
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '6.13.0', // MAJOR: Add meta handler for webshare: IDs - enables direct search to work!
+    version: '6.13.1', // Use Webshare thumbnail for poster, custom backdrop for background
     name: 'Webshare Anime',
     description: 'Anime a filmy z Webshare.cz s vyhledáváním',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -1788,7 +1788,7 @@ async function handleCatalogRequest(args) {
         
         console.log(`Found ${results.length} files for search: ${searchQuery}`);
         
-        // Backdrop URL
+        // Backdrop URL - náš vlastní obrázek
         const backdropUrl = 'https://raw.githubusercontent.com/david325345/webshare-stremio/main/public/webshare-backdrop.jpg';
         
         // Vytvořit metas - každý soubor jako samostatný meta
@@ -1800,8 +1800,8 @@ async function handleCatalogRequest(args) {
                 id: metaId,
                 type: args.type,
                 name: file.name,
-                poster: backdropUrl,
-                background: backdropUrl,
+                poster: file.img || backdropUrl,  // Webshare thumbnail nebo fallback
+                background: backdropUrl,  // Náš backdrop
                 description: `Webshare: ${formatBytes(parseInt(file.size))}`,
                 releaseInfo: file.name,
                 links: []  // Důležité - prázdné links znamená že addon poskytne streamy
