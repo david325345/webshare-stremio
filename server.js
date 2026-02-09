@@ -6,7 +6,7 @@ const xml2js = require('xml2js');
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '6.5.2', // Filter out short acronyms from Kitsu names (HOTD, HSOTD)
+    version: '6.5.3', // Added negative lookahead to prevent matching season number as episode (S01E10 matching "01")
     name: 'Webshare Anime',
     description: 'Anime a filmy z Webshare.cz s vyhledáváním',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -1060,8 +1060,9 @@ async function handleStreamRequest(args) {
                         new RegExp(`E${String(targetEpisode).padStart(2, '0')}[^0-9]`, 'i'),
                         new RegExp(`E${String(targetEpisode).padStart(2, '0')}$`, 'i'),
                         // Jen číslo s oddělovačem před I po: " 03 ", "-03-", ".03.", "_03_", "[03]", "(03)"
-                        new RegExp(`[\\s\\-_\\.\\[\\(]${String(targetEpisode).padStart(2, '0')}[\\s\\-_\\.\\]\\)]`, 'i'),
-                        new RegExp(`[\\s\\-_\\.\\[\\(]${String(targetEpisode).padStart(2, '0')}$`, 'i'),
+                        // NEGATIVE LOOKAHEAD: Nesmí být "S" před číslem (aby S01E10 nematchovalo "01")
+                        new RegExp(`(?<!S)[\\s\\-_\\.\\[\\(]${String(targetEpisode).padStart(2, '0')}[\\s\\-_\\.\\]\\)]`, 'i'),
+                        new RegExp(`(?<!S)[\\s\\-_\\.\\[\\(]${String(targetEpisode).padStart(2, '0')}$`, 'i'),
                         // Na začátku souboru: "08 -", "08.", "08_"
                         new RegExp(`^${String(targetEpisode).padStart(2, '0')}[\\s\\-_\\.]`, 'i'),
                         // Pattern - 09. (pomlčka mezera číslo tečka)
