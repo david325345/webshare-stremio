@@ -6,7 +6,7 @@ const xml2js = require('xml2js');
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '6.2.3', // Added short name variants for Kitsu (first 2 words)
+    version: '6.3.0', // Added short name variants for all paths (IMDb anime, IMDb non-anime)
     name: 'Webshare Anime',
     description: 'Anime a filmy z Webshare.cz s vyhledáváním',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -795,6 +795,15 @@ async function handleStreamRequest(args) {
                         const plainNumber = String(episode).padStart(2, '0');
                         searchQueries.push(`${cleanName} ${plainNumber}`);
                         searchQueries.push(`${cleanNameNoSuffix} ${plainNumber}`);
+                        
+                        // Kratší varianta - první 2 slova
+                        const words = cleanNameNoSuffix.split(/\s+/);
+                        if (words.length > 2) {
+                            const shortName = words.slice(0, 2).join(' ');
+                            searchQueries.push(`${shortName} ${seasonEp}`);
+                            searchQueries.push(`${shortName} ${episodeOnly}`);
+                            searchQueries.push(`${shortName} ${plainNumber}`);
+                        }
                     }
                 } else {
                     // Jen první 3 názvy
@@ -823,6 +832,15 @@ async function handleStreamRequest(args) {
                         const plainNumber = String(episode).padStart(2, '0');
                         searchQueries.push(`${cleanName} ${plainNumber}`);
                         searchQueries.push(`${cleanNameNoSuffix} ${plainNumber}`);
+                        
+                        // Kratší varianta - první 2 slova
+                        const words = cleanNameNoSuffix.split(/\s+/);
+                        if (words.length > 2) {
+                            const shortName = words.slice(0, 2).join(' ');
+                            searchQueries.push(`${shortName} ${seasonEp}`);
+                            searchQueries.push(`${shortName} ${episodeOnly}`);
+                            searchQueries.push(`${shortName} ${plainNumber}`);
+                        }
                     }
                 } else {
                     // Filmy nebo bez epizody
