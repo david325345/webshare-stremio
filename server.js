@@ -6,7 +6,7 @@ const xml2js = require('xml2js');
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '6.10.2', // Fix: Word boundary for spinoff keywords (ona in Sayonara vs ONA spinoff)
+    version: '6.11.0', // Add "ou" romanization variants (Sayonara → Sayounara)
     name: 'Webshare Anime',
     description: 'Anime a filmy z Webshare.cz s vyhledáváním',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -819,17 +819,25 @@ async function handleStreamRequest(args) {
                         const cleanName = name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\//g, ' ').replace(/[!?:\*]/g, '');
                         const cleanNameNoSuffix = cleanName.replace(/\s*\(TV\)\s*$/i, '').trim();
                         
+                        // Varianta s "ou" romanizací (Sayonara → Sayounara)
+                        // Nahradíme "o" následované samohláskou za "ou"
+                        const nameWithOu = cleanNameNoSuffix.replace(/o([aeiou])/gi, 'ou$1');
+                        const hasOuVariant = nameWithOu !== cleanNameNoSuffix;
+                        
                         searchQueries.push(`${cleanName} ${seasonEp}`);
                         searchQueries.push(`${cleanNameNoSuffix} ${seasonEp}`);
+                        if (hasOuVariant) searchQueries.push(`${nameWithOu} ${seasonEp}`);
                         
                         // Jen epizoda
                         searchQueries.push(`${cleanName} ${episodeOnly}`);
                         searchQueries.push(`${cleanNameNoSuffix} ${episodeOnly}`);
+                        if (hasOuVariant) searchQueries.push(`${nameWithOu} ${episodeOnly}`);
                         
                         // Jen číslo
                         const plainNumber = String(episode).padStart(2, '0');
                         searchQueries.push(`${cleanName} ${plainNumber}`);
                         searchQueries.push(`${cleanNameNoSuffix} ${plainNumber}`);
+                        if (hasOuVariant) searchQueries.push(`${nameWithOu} ${plainNumber}`);
                         
                         // Kratší varianta - první 2 slova
                         const words = cleanNameNoSuffix.split(/\s+/);
