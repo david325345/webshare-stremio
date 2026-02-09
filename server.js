@@ -6,7 +6,7 @@ const xml2js = require('xml2js');
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '6.8.0', // Extract base name from spinoff titles (Sousou no Frieren: ●● → Sousou no Frieren)
+    version: '6.8.1', // Apply acronym filter only to series, not movies (fixes Paprika)
     name: 'Webshare Anime',
     description: 'Anime a filmy z Webshare.cz s vyhledáváním',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -542,13 +542,15 @@ async function handleStreamRequest(args) {
             console.log('Filtered to latin names:', latinNames);
             
             // Odfiltrovat příliš krátké názvy (akronymy jako "HOTD", "HSOTD")
-            // Ponechat jen pokud mají aspoň 8 znaků NEBO 2+ slova
-            latinNames = latinNames.filter(name => {
-                const words = name.split(/\s+/);
-                return name.length >= 8 || words.length >= 2;
-            });
-            
-            console.log('After removing acronyms:', latinNames);
+            // POUZE pro series - pro filmy jsou jednoslovné názvy legitimní (Paprika, Akira)
+            if (args.type === 'series') {
+                latinNames = latinNames.filter(name => {
+                    const words = name.split(/\s+/);
+                    return name.length >= 8 || words.length >= 2;
+                });
+                
+                console.log('After removing acronyms:', latinNames);
+            }
             
             if (latinNames.length === 0) {
                 console.log('No latin names available, returning empty');
