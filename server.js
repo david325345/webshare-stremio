@@ -6,7 +6,7 @@ const xml2js = require('xml2js');
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '6.0.0', // Removed Webshare search catalog completely
+    version: '6.1.0', // Added more search query variants - plain episode numbers and without (TV) suffix
     name: 'Webshare Anime',
     description: 'Anime a filmy z Webshare.cz s vyhledáváním',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -747,9 +747,19 @@ async function handleStreamRequest(args) {
                     for (const name of names.slice(0, 3)) {
                         // Vyčistíme speciální znaky
                         const cleanName = name.replace(/[!?:\*]/g, '');
+                        const cleanNameNoSuffix = cleanName.replace(/\s*\(TV\)\s*$/i, '').trim();
+                        
                         searchQueries.push(`${cleanName} ${seasonEp}`);
-                        // Jen epizoda pro seriály bez čísla sezóny
+                        searchQueries.push(`${cleanNameNoSuffix} ${seasonEp}`);
+                        
+                        // Jen epizoda
                         searchQueries.push(`${cleanName} ${episodeOnly}`);
+                        searchQueries.push(`${cleanNameNoSuffix} ${episodeOnly}`);
+                        
+                        // Jen číslo
+                        const plainNumber = String(episode).padStart(2, '0');
+                        searchQueries.push(`${cleanName} ${plainNumber}`);
+                        searchQueries.push(`${cleanNameNoSuffix} ${plainNumber}`);
                     }
                 } else {
                     // Jen první 3 názvy
@@ -764,10 +774,20 @@ async function handleStreamRequest(args) {
                     
                     for (const name of names) {
                         const cleanName = name.replace(/[!?:\*]/g, '');
+                        const cleanNameNoSuffix = cleanName.replace(/\s*\(TV\)\s*$/i, '').trim(); // Odstranit "(TV)" suffix
+                        
                         // Standardní formát S01E04
                         searchQueries.push(`${cleanName} ${seasonEp}`);
-                        // Pouze epizoda E04 (pro seriály které nemají číslo sezóny)
+                        searchQueries.push(`${cleanNameNoSuffix} ${seasonEp}`);
+                        
+                        // Pouze epizoda E04
                         searchQueries.push(`${cleanName} ${episodeOnly}`);
+                        searchQueries.push(`${cleanNameNoSuffix} ${episodeOnly}`);
+                        
+                        // Jen číslo 01, 04 apod. (pro webshare formát)
+                        const plainNumber = String(episode).padStart(2, '0');
+                        searchQueries.push(`${cleanName} ${plainNumber}`);
+                        searchQueries.push(`${cleanNameNoSuffix} ${plainNumber}`);
                     }
                 } else {
                     // Filmy nebo bez epizody
