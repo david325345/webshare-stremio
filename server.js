@@ -6,7 +6,7 @@ const xml2js = require('xml2js');
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '6.3.0', // Added short name variants for all paths (IMDb anime, IMDb non-anime)
+    version: '6.3.1', // Added "/" to special characters removal (fixes "Fate/strange Fake")
     name: 'Webshare Anime',
     description: 'Anime a filmy z Webshare.cz s vyhledáváním',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -553,7 +553,7 @@ async function handleStreamRequest(args) {
                 const plainNumber = String(episode).padStart(2, '0');
                 
                 for (const name of latinNames) {
-                    const cleanName = name.replace(/[!?:\*]/g, '');
+                    const cleanName = name.replace(/[!?:\*/]/g, '');
                     
                     // Plný název
                     searchQueries.push(`${cleanName} ${seasonEp}`);
@@ -572,7 +572,7 @@ async function handleStreamRequest(args) {
             } else {
                 // Žádné číslo epizody - hledáme jen název
                 for (const name of latinNames) {
-                    const cleanName = name.replace(/[!?:\*]/g, '');
+                    const cleanName = name.replace(/[!?:\*/]/g, '');
                     searchQueries.push(cleanName);
                     
                     // Kratší varianta
@@ -781,7 +781,7 @@ async function handleStreamRequest(args) {
                     // Použijeme jen první 3 názvy (romaji + english + hlavní synonym)
                     for (const name of names.slice(0, 3)) {
                         // Vyčistíme speciální znaky
-                        const cleanName = name.replace(/[!?:\*]/g, '');
+                        const cleanName = name.replace(/[!?:\*/]/g, '');
                         const cleanNameNoSuffix = cleanName.replace(/\s*\(TV\)\s*$/i, '').trim();
                         
                         searchQueries.push(`${cleanName} ${seasonEp}`);
@@ -807,7 +807,7 @@ async function handleStreamRequest(args) {
                     }
                 } else {
                     // Jen první 3 názvy
-                    searchQueries = names.slice(0, 3).map(n => n.replace(/[!?:\*]/g, ''));
+                    searchQueries = names.slice(0, 3).map(n => n.replace(/[!?:\*/]/g, ''));
                 }
             } else {
                 // Jeden nebo více názvů (z TMDB nebo Cinemeta)
@@ -817,7 +817,7 @@ async function handleStreamRequest(args) {
                     const episodeOnly = `E${String(episode).padStart(2, '0')}`;
                     
                     for (const name of names) {
-                        const cleanName = name.replace(/[!?:\*]/g, '');
+                        const cleanName = name.replace(/[!?:\*/]/g, '');
                         const cleanNameNoSuffix = cleanName.replace(/\s*\(TV\)\s*$/i, '').trim(); // Odstranit "(TV)" suffix
                         
                         // Standardní formát S01E04
@@ -844,7 +844,7 @@ async function handleStreamRequest(args) {
                     }
                 } else {
                     // Filmy nebo bez epizody
-                    searchQueries = names.map(n => n.replace(/[!?:\*]/g, ''));
+                    searchQueries = names.map(n => n.replace(/[!?:\*/]/g, ''));
                 }
             }
         } else {
