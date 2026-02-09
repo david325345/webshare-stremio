@@ -6,7 +6,7 @@ const xml2js = require('xml2js');
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '6.7.0', // Normalize diacritics in search queries (Sósó → Sousou)
+    version: '6.8.0', // Extract base name from spinoff titles (Sousou no Frieren: ●● → Sousou no Frieren)
     name: 'Webshare Anime',
     description: 'Anime a filmy z Webshare.cz s vyhledáváním',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -534,7 +534,7 @@ async function handleStreamRequest(args) {
             }
 
             // Filtrujeme jen názvy bez japonských znaků
-            const latinNames = names.filter(name => {
+            let latinNames = names.filter(name => {
                 // Ponecháme jen názvy v latinské abecedě (a-z, A-Z, 0-9, mezery, pomlčky, atd.)
                 return /^[\x00-\x7F\u00C0-\u024F\u1E00-\u1EFF]+$/.test(name);
             });
@@ -730,21 +730,34 @@ async function handleStreamRequest(args) {
                     // Filtrujeme jen základní latinku (bez diakritiky pro jiné jazyky)
                     // Povolujeme: a-z, A-Z, 0-9, mezery, pomlčky, apostrofy, závorky
                     // Zakazujeme: á, ñ, ü, ř, č atd. (české, španělské, německé...)
-                    const englishRomajiNames = anilistNames.filter(name => {
+                    // Filtrujeme a upravujeme názvy
+                    const englishRomajiNames = [];
+                    for (const name of anilistNames) {
                         // Jen základní ASCII znaky (bez diakritiky)
                         if (!/^[a-zA-Z0-9\s\-':!\[\]\(\)\.&]+$/.test(name)) {
-                            return false;
+                            continue;
                         }
                         
-                        // Odfiltrovat spin-offy a speciály
+                        // Odstranit suffix se spin-offy a speciály
+                        let cleanedName = name;
                         const nameLower = name.toLowerCase();
                         const spinoffKeywords = ['mini anime', 'chibi', 'special', 'ova', 'ona', 'picture drama', 'recap', 'marumaru'];
-                        if (spinoffKeywords.some(keyword => nameLower.includes(keyword))) {
-                            return false;
+                        
+                        // Pokud obsahuje spinoff keyword, extrahujeme základní název (část před sufixem)
+                        for (const keyword of spinoffKeywords) {
+                            const index = nameLower.indexOf(keyword);
+                            if (index > 0) {
+                                // Extrahujeme část před sufixem, odstraníme " :", " -", " ~" na konci
+                                cleanedName = name.substring(0, index).replace(/[\s:\-~●]+$/, '').trim();
+                                break;
+                            }
                         }
                         
-                        return true;
-                    });
+                        // Přidat pouze pokud má aspoň 3 znaky
+                        if (cleanedName.length >= 3 && !englishRomajiNames.includes(cleanedName)) {
+                            englishRomajiNames.push(cleanedName);
+                        }
+                    }
                     
                     console.log('Filtered to English/Romaji names:', englishRomajiNames);
                     
