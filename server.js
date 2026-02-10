@@ -6,7 +6,7 @@ const xml2js = require('xml2js');
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '6.14.2', // Fix: Remove non-existent detectLanguage/detectCodec functions
+    version: '6.14.3', // Add full filename and detailed metadata to meta description
     name: 'Webshare Anime',
     description: 'Anime a filmy z Webshare.cz s vyhledáváním',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -1892,6 +1892,35 @@ async function handleMetaRequest(args) {
         
         console.log('Returning meta for:', fileInfo.name);
         
+        // Detekce kvality a dalších info z názvu
+        const qualityInfo = detectQuality(fileInfo.name);
+        
+        // Sestavit detailní description s celým názvem a metadaty
+        let description = `📄 ${fileInfo.name}\n\n`;
+        
+        // Přidat kvalitu/rozlišení pokud je detekováno
+        if (qualityInfo.resolution) {
+            description += `📺 Rozlišení: ${qualityInfo.resolution}\n`;
+        }
+        if (qualityInfo.codec) {
+            description += `🎬 Kodek: ${qualityInfo.codec}\n`;
+        }
+        if (qualityInfo.audio) {
+            description += `🔊 Audio: ${qualityInfo.audio}\n`;
+        }
+        if (qualityInfo.source) {
+            description += `📀 Zdroj: ${qualityInfo.source}\n`;
+        }
+        
+        // Základní info
+        description += `💾 Velikost: ${formatBytes(fileInfo.size)}\n`;
+        description += `👍 ${fileInfo.positive_votes} 👎 ${fileInfo.negative_votes}\n`;
+        
+        // Pokud má Webshare popis, přidat ho
+        if (fileInfo.description && fileInfo.description.trim()) {
+            description += `\n📝 ${fileInfo.description}`;
+        }
+        
         return {
             meta: {
                 id: args.id,
@@ -1899,7 +1928,7 @@ async function handleMetaRequest(args) {
                 name: fileInfo.name,
                 poster: fileInfo.img || backdropUrl,
                 background: fileInfo.img || backdropUrl,
-                description: `${fileInfo.description}\n\n👍 ${fileInfo.positive_votes} 👎 ${fileInfo.negative_votes}\n💾 ${formatBytes(fileInfo.size)}`,
+                description: description,
                 website: `https://webshare.cz/#/file/${fileIdent}`
             }
         };
