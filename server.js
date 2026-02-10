@@ -6,7 +6,7 @@ const xml2js = require('xml2js');
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '6.14.0', // MAJOR: Search by filename for webshare- IDs (show all variants, proper names)
+    version: '6.14.1', // Return only selected file with proper filename (not search results)
     name: 'Webshare Anime',
     description: 'Anime a filmy z Webshare.cz s vyhledáváním',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -567,50 +567,37 @@ async function handleStreamRequest(args) {
                 
                 console.log('File name:', fileInfo.name);
                 
-                // Vyhledat podle názvu souboru
-                console.log('Searching by filename...');
-                const results = await search(fileInfo.name, token);
-                console.log(`Found ${results.length} results for filename search`);
+                // Získat link pro TENTO konkrétní soubor
+                console.log('Getting file link...');
+                const link = await getFileLink(fileIdent, token);
                 
-                if (results.length === 0) {
+                if (!link) {
+                    console.log('No link available for file:', fileIdent);
                     return { streams: [] };
                 }
                 
-                // Mapovat výsledky na streamy (bez filtrování - vrátit vše)
-                console.log(`Processing ${results.length} files for links...`);
+                console.log('Returning stream with proper filename');
                 
-                const streams = [];
+                // Detekce kvality a jazyka pro stream název
+                const quality = detectQuality(fileInfo.name);
+                const language = detectLanguage(fileInfo.name);
+                const codec = detectCodec(fileInfo.name);
                 
-                for (const file of results) {
-                    try {
-                        const link = await getFileLink(file.ident, token);
-                        
-                        if (link) {
-                            // Detekce kvality a jazyka
-                            const quality = detectQuality(file.name);
-                            const language = detectLanguage(file.name);
-                            const codec = detectCodec(file.name);
-                            
-                            // Sestavit název streamu
-                            let streamName = 'Webshare';
-                            if (language) streamName += ` ${language}`;
-                            if (quality) streamName += ` ${quality}`;
-                            if (codec) streamName += ` ${codec}`;
-                            streamName += ` 💾${formatBytes(file.size)}`;
-                            
-                            streams.push({
-                                name: streamName,
-                                title: file.name,
-                                url: link
-                            });
-                        }
-                    } catch (error) {
-                        console.log('No link available for file:', file.name);
-                    }
-                }
+                // Sestavit název streamu
+                let streamName = 'Webshare';
+                if (language) streamName += ` ${language}`;
+                if (quality) streamName += ` ${quality}`;
+                if (codec) streamName += ` ${codec}`;
+                streamName += ` 💾${formatBytes(fileInfo.size)}`;
                 
-                console.log(`Returning ${streams.length} streams`);
-                return { streams };
+                // Vrátit JEN tento jeden soubor
+                return {
+                    streams: [{
+                        name: streamName,
+                        title: fileInfo.name,  // Správný název místo identu
+                        url: link
+                    }]
+                };
                 
             } catch (error) {
                 console.error('Error in webshare- handler:', error.message);
