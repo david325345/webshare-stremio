@@ -6,7 +6,7 @@ const xml2js = require('xml2js');
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '6.15.1', // Add enable_direct_search checkbox to web form
+    version: '6.15.2', // Update feature list on landing page
     name: 'Webshare Anime',
     description: 'Anime a filmy z Webshare.cz s vyhledáváním',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -2143,10 +2143,12 @@ app.get('/', (req, res) => {
     <h2>✨ Funkce</h2>
     <ul>
         <li>🎯 Automatická detekce anime přes AniList</li>
-        <li>🌐 TMDB metadata (obrázky, popisy)</li>
+        <li>🌐 TMDB české názvy</li>
         <li>📺 Podpora seriálů i filmů</li>
         <li>🇨🇿 CZ/SK priorita</li>
         <li>🎬 Smart filtrování podle roku a epizod</li>
+        <li>🔍 Přímé vyhledávání na Webshare</li>
+        <li>📱 Optimalizace pro Stremio a Omni (Apple TV)</li>
     </ul>
     
     <div class="note">
