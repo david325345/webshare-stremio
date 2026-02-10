@@ -6,7 +6,7 @@ const xml2js = require('xml2js');
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '6.13.3', // Add detailed logging to webshare- handler to debug issue
+    version: '6.14.0', // MAJOR: Search by filename for webshare- IDs (show all variants, proper names)
     name: 'Webshare Anime',
     description: 'Anime a filmy z Webshare.cz s vyhledáváním',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -556,25 +556,62 @@ async function handleStreamRequest(args) {
             console.log('File ident:', fileIdent);
             
             try {
-                // Získat link pro tento soubor
-                console.log('Calling getFileLink...');
-                const link = await getFileLink(fileIdent, token);
-                console.log('getFileLink returned:', link ? 'LINK' : 'NULL');
+                // Získat info o souboru (hlavně název!)
+                console.log('Getting file info...');
+                const fileInfo = await getFileInfo(fileIdent, token);
                 
-                if (!link) {
-                    console.log('No link available for file:', fileIdent);
+                if (!fileInfo || !fileInfo.name) {
+                    console.log('No file info available for ident:', fileIdent);
                     return { streams: [] };
                 }
                 
-                console.log('Returning stream with link');
-                // Vrátit stream
-                return {
-                    streams: [{
-                        name: 'Webshare 📺',
-                        title: fileIdent,
-                        url: link
-                    }]
-                };
+                console.log('File name:', fileInfo.name);
+                
+                // Vyhledat podle názvu souboru
+                console.log('Searching by filename...');
+                const results = await search(fileInfo.name, token);
+                console.log(`Found ${results.length} results for filename search`);
+                
+                if (results.length === 0) {
+                    return { streams: [] };
+                }
+                
+                // Mapovat výsledky na streamy (bez filtrování - vrátit vše)
+                console.log(`Processing ${results.length} files for links...`);
+                
+                const streams = [];
+                
+                for (const file of results) {
+                    try {
+                        const link = await getFileLink(file.ident, token);
+                        
+                        if (link) {
+                            // Detekce kvality a jazyka
+                            const quality = detectQuality(file.name);
+                            const language = detectLanguage(file.name);
+                            const codec = detectCodec(file.name);
+                            
+                            // Sestavit název streamu
+                            let streamName = 'Webshare';
+                            if (language) streamName += ` ${language}`;
+                            if (quality) streamName += ` ${quality}`;
+                            if (codec) streamName += ` ${codec}`;
+                            streamName += ` 💾${formatBytes(file.size)}`;
+                            
+                            streams.push({
+                                name: streamName,
+                                title: file.name,
+                                url: link
+                            });
+                        }
+                    } catch (error) {
+                        console.log('No link available for file:', file.name);
+                    }
+                }
+                
+                console.log(`Returning ${streams.length} streams`);
+                return { streams };
+                
             } catch (error) {
                 console.error('Error in webshare- handler:', error.message);
                 console.error('Stack:', error.stack);
