@@ -6,7 +6,7 @@ const xml2js = require('xml2js');
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '6.13.2', // Change webshare: to webshare- (fix Apple TV Omni compatibility)
+    version: '6.13.3', // Add detailed logging to webshare- handler to debug issue
     name: 'Webshare Anime',
     description: 'Anime a filmy z Webshare.cz s vyhledáváním',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -553,23 +553,33 @@ async function handleStreamRequest(args) {
         if (args.id.startsWith('webshare-')) {
             console.log('Direct search file request');
             const fileIdent = args.id.substring(9); // Remove "webshare-" prefix
+            console.log('File ident:', fileIdent);
             
-            // Získat link pro tento soubor
-            const link = await getFileLink(fileIdent, token);
-            
-            if (!link) {
-                console.log('No link available for file:', fileIdent);
+            try {
+                // Získat link pro tento soubor
+                console.log('Calling getFileLink...');
+                const link = await getFileLink(fileIdent, token);
+                console.log('getFileLink returned:', link ? 'LINK' : 'NULL');
+                
+                if (!link) {
+                    console.log('No link available for file:', fileIdent);
+                    return { streams: [] };
+                }
+                
+                console.log('Returning stream with link');
+                // Vrátit stream
+                return {
+                    streams: [{
+                        name: 'Webshare 📺',
+                        title: fileIdent,
+                        url: link
+                    }]
+                };
+            } catch (error) {
+                console.error('Error in webshare- handler:', error.message);
+                console.error('Stack:', error.stack);
                 return { streams: [] };
             }
-            
-            // Vrátit stream
-            return {
-                streams: [{
-                    name: 'Webshare 📺',
-                    title: fileIdent,
-                    url: link
-                }]
-            };
         }
         
         // Získáme všechny varianty názvů
