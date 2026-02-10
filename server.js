@@ -6,7 +6,7 @@ const xml2js = require('xml2js');
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '6.14.1', // Return only selected file with proper filename (not search results)
+    version: '6.14.2', // Fix: Remove non-existent detectLanguage/detectCodec functions
     name: 'Webshare Anime',
     description: 'Anime a filmy z Webshare.cz s vyhledáváním',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -578,16 +578,13 @@ async function handleStreamRequest(args) {
                 
                 console.log('Returning stream with proper filename');
                 
-                // Detekce kvality a jazyka pro stream název
-                const quality = detectQuality(fileInfo.name);
-                const language = detectLanguage(fileInfo.name);
-                const codec = detectCodec(fileInfo.name);
+                // Detekce kvality pro stream název
+                const qualityInfo = detectQuality(fileInfo.name);
                 
                 // Sestavit název streamu
                 let streamName = 'Webshare';
-                if (language) streamName += ` ${language}`;
-                if (quality) streamName += ` ${quality}`;
-                if (codec) streamName += ` ${codec}`;
+                if (qualityInfo.resolution) streamName += ` 📺${qualityInfo.resolution}`;
+                if (qualityInfo.codec) streamName += ` 🎬${qualityInfo.codec}`;
                 streamName += ` 💾${formatBytes(fileInfo.size)}`;
                 
                 // Vrátit JEN tento jeden soubor
