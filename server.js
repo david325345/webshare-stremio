@@ -6,7 +6,7 @@ const xml2js = require('xml2js');
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '6.14.3', // Add full filename and detailed metadata to meta description
+    version: '6.15.0', // Add enable_direct_search config option (on/off checkbox)
     name: 'Webshare Anime',
     description: 'Anime a filmy z Webshare.cz s vyhledáváním',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -46,6 +46,12 @@ const manifest = {
             title: 'TMDB API Key (optional - for Czech names)',
             required: false,
             default: ''
+        },
+        {
+            key: 'enable_direct_search',
+            type: 'checkbox',
+            title: 'Enable Direct Search (Webshare Hledat catalog)',
+            default: true
         }
     ]
 };
@@ -1787,6 +1793,12 @@ async function handleCatalogRequest(args) {
         // Pouze pro search katalog
         if (args.id !== 'webshare_search') {
             console.log('Not webshare_search catalog, returning empty');
+            return { metas: [] };
+        }
+        
+        // Kontrola jestli má uživatel povolené přímé vyhledávání
+        if (args.config?.enable_direct_search === false) {
+            console.log('Direct search is disabled in user config');
             return { metas: [] };
         }
         
