@@ -6,7 +6,7 @@ const xml2js = require('xml2js');
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '6.15.0', // Add enable_direct_search config option (on/off checkbox)
+    version: '6.15.1', // Add enable_direct_search checkbox to web form
     name: 'Webshare Anime',
     description: 'Anime a filmy z Webshare.cz s vyhledáváním',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -2108,6 +2108,13 @@ app.get('/', (req, res) => {
             <input type="text" id="tmdb" name="tmdb" placeholder="Získejte zdarma na themoviedb.org">
         </div>
         
+        <div class="form-group">
+            <label style="display: flex; align-items: center; cursor: pointer;">
+                <input type="checkbox" id="enable_direct_search" name="enable_direct_search" checked style="width: auto; margin-right: 10px;">
+                <span>Enable Direct Search (Webshare Hledat catalog)</span>
+            </label>
+        </div>
+        
         <button type="submit" class="install-btn">
             🔗 Vygenerovat instalační link
         </button>
@@ -2181,6 +2188,7 @@ app.get('/', (req, res) => {
             const username = document.getElementById('username').value.trim();
             const password = document.getElementById('password').value.trim();
             const tmdb = document.getElementById('tmdb').value.trim();
+            const enableDirectSearch = document.getElementById('enable_direct_search').checked;
             
             if (!username || !password) {
                 alert('⚠️ Username a password jsou povinné!');
@@ -2191,7 +2199,8 @@ app.get('/', (req, res) => {
             const config = {
                 username: username,
                 password: password,
-                tmdb_api_key: tmdb || ''
+                tmdb_api_key: tmdb || '',
+                enable_direct_search: enableDirectSearch
             };
             
             // Base64 encode config pro personal URL
