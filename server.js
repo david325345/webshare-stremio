@@ -6,7 +6,7 @@ const xml2js = require('xml2js');
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '6.13.1', // Use Webshare thumbnail for poster, custom backdrop for background
+    version: '6.13.2', // Change webshare: to webshare- (fix Apple TV Omni compatibility)
     name: 'Webshare Anime',
     description: 'Anime a filmy z Webshare.cz s vyhledáváním',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -549,10 +549,10 @@ async function handleStreamRequest(args) {
         const saltedPassword = await saltPassword(username, password);
         const token = await login(username, saltedPassword);
         
-        // NOVÉ: Handling pro webshare: ID (z direct search)
-        if (args.id.startsWith('webshare:')) {
+        // NOVÉ: Handling pro webshare- ID (z direct search)
+        if (args.id.startsWith('webshare-')) {
             console.log('Direct search file request');
-            const fileIdent = args.id.substring(9); // Remove "webshare:" prefix
+            const fileIdent = args.id.substring(9); // Remove "webshare-" prefix
             
             // Získat link pro tento soubor
             const link = await getFileLink(fileIdent, token);
@@ -1793,8 +1793,8 @@ async function handleCatalogRequest(args) {
         
         // Vytvořit metas - každý soubor jako samostatný meta
         const metas = results.slice(0, 50).map((file, index) => {
-            // Generovat unikátní ID pro každý soubor
-            const metaId = `webshare:${file.ident}`;
+            // Generovat unikátní ID pro každý soubor - použít - místo :
+            const metaId = `webshare-${file.ident}`;
             
             return {
                 id: metaId,
@@ -1829,12 +1829,12 @@ async function handleMetaRequest(args) {
         console.log('Type:', args.type);
         console.log('ID:', args.id);
         
-        // Pouze pro webshare: ID
-        if (!args.id.startsWith('webshare:')) {
+        // Pouze pro webshare- ID
+        if (!args.id.startsWith('webshare-')) {
             return { meta: {} };
         }
         
-        const fileIdent = args.id.substring(9); // Remove "webshare:" prefix
+        const fileIdent = args.id.substring(9); // Remove "webshare-" prefix
         const { username, password } = args.config || {};
         
         if (!username || !password) {
