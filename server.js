@@ -185,7 +185,7 @@ async function addManualLink(query, webshareIdent, addedBy, fileName) {
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '7.3.1', // Add My Links button to homepage
+    version: '7.4.0', // MAJOR: My Links without login, max 10 results, show after manifest generation
     name: 'Webshare Anime',
     description: 'Anime a filmy z Webshare.cz s vyhledáváním',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -230,6 +230,12 @@ const manifest = {
             key: 'enable_direct_search',
             type: 'checkbox',
             title: 'Enable Direct Search (Webshare Hledat catalog)',
+            default: true
+        },
+        {
+            key: 'enable_my_links',
+            type: 'checkbox',
+            title: 'Enable My Links (manual link management)',
             default: true
         }
     ]
@@ -2176,6 +2182,10 @@ console.log('✅ Keep-alive scheduler initialized');
 // ========== EXPRESS SERVER ==========
 const app = express();
 
+// Body parser middleware - MUSÍ BÝT PŘED routes!
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
 // CORS middleware
 app.use((req, res, next) => {
     // Log pouze API requesty, ne statické soubory
@@ -2302,17 +2312,24 @@ app.get('/', (req, res) => {
             </label>
         </div>
         
+        <div class="form-group">
+            <label style="display: flex; align-items: center; cursor: pointer;">
+                <input type="checkbox" id="enable_my_links" name="enable_my_links" checked style="width: auto; margin-right: 10px;">
+                <span>Enable My Links (manual link management)</span>
+            </label>
+        </div>
+        
         <button type="submit" class="install-btn">
             🔗 Vygenerovat instalační link
         </button>
     </form>
     
-    <div style="margin-top: 20px; text-align: center;">
-        <a href="/mylinks" style="display: inline-block; padding: 12px 24px; background: #9d4edd; color: white; text-decoration: none; border-radius: 5px; font-weight: bold;">
-            🔗 My Links - Správa manuálních linků
+    <div id="myLinksSection" style="display: none; margin-top: 20px; text-align: center;">
+        <a id="myLinksLink" href="/mylinks" style="display: inline-block; padding: 12px 24px; background: #9d4edd; color: white; text-decoration: none; border-radius: 5px; font-weight: bold;">
+            🔗 My Links - Správa historie vyhledávání
         </a>
         <p style="color: #999; font-size: 14px; margin-top: 10px;">
-            Přihlaste se svými Webshare údaji a spravujte manuální linky pro vyhledávání
+            Spravujte manuální linky pro vyhledávání (max 10 posledních hledání)
         </p>
     </div>
     
@@ -2387,6 +2404,7 @@ app.get('/', (req, res) => {
             const password = document.getElementById('password').value.trim();
             const tmdb = document.getElementById('tmdb').value.trim();
             const enableDirectSearch = document.getElementById('enable_direct_search').checked;
+            const enableMyLinks = document.getElementById('enable_my_links').checked;
             
             if (!username || !password) {
                 alert('⚠️ Username a password jsou povinné!');
@@ -2398,7 +2416,8 @@ app.get('/', (req, res) => {
                 username: username,
                 password: password,
                 tmdb_api_key: tmdb || '',
-                enable_direct_search: enableDirectSearch
+                enable_direct_search: enableDirectSearch,
+                enable_my_links: enableMyLinks
             };
             
             // Base64 encode config pro personal URL
@@ -2411,6 +2430,17 @@ app.get('/', (req, res) => {
             // Zobrazíme link
             document.getElementById('installLinkDisplay').textContent = installUrl;
             document.getElementById('installLinkContainer').style.display = 'block';
+            
+            // Zobrazit My Links tlačítko pokud je My Links povoleno
+            const myLinksSection = document.getElementById('myLinksSection');
+            if (enableMyLinks && myLinksSection) {
+                myLinksSection.style.display = 'block';
+                // Nastavit URL s configem
+                const myLinksLink = document.getElementById('myLinksLink');
+                if (myLinksLink) {
+                    myLinksLink.href = \`/mylinks?config=\${configB64}\`;
+                }
+            }
             
             // Scrollujeme k linku
             document.getElementById('installLinkContainer').scrollIntoView({ behavior: 'smooth' });
@@ -2587,9 +2617,18 @@ app.get('/:userConfig/meta/:type/:id.json', async (req, res) => {
 
 // ========== MY LINKS - Web rozhraní pro správu manuálních linků ==========
 app.get('/mylinks', async (req, res) => {
-    // Pokud jsou credentials v query (?username=...&password=...), auto-login
-    const autoUsername = req.query.username || '';
-    const autoPassword = req.query.password || '';
+    // Získat config z URL nebo username/password (pro zpětnou kompatibilitu)
+    let username = req.query.username || '';
+    
+    if (req.query.config) {
+        try {
+            const configJson = Buffer.from(req.query.config, 'base64').toString('utf8');
+            const config = JSON.parse(configJson);
+            username = config.username || '';
+        } catch (error) {
+            console.error('Failed to parse config:', error.message);
+        }
+    }
     
     res.send(`
 <!DOCTYPE html>
@@ -2675,7 +2714,7 @@ app.get('/mylinks', async (req, res) => {
 <body>
     <h1>🔗 My Links - Správa manuálních linků</h1>
     
-    <div id="loginSection" class="login-form" style="display: ${autoUsername ? 'none' : 'block'}">
+    <div id="loginSection" class="login-form" style="display: ${username ? 'none' : 'block'}">
         <h2>Přihlášení</h2>
         <p>Použijte své Webshare přihlašovací údaje:</p>
         <div class="form-group">
@@ -2700,13 +2739,38 @@ app.get('/mylinks', async (req, res) => {
     </div>
     
     <script>
-        let currentUser = '';
-        const autoUsername = '${autoUsername}';
-        const autoPassword = '${autoPassword}';
+        let currentUser = '${username}';
         
-        // Auto-login pokud jsou credentials v URL
-        if (autoUsername && autoPassword) {
-            setTimeout(() => loginWithCredentials(autoUsername, autoPassword), 100);
+        // Auto-load historie pokud máme username z configu
+        if (currentUser) {
+            setTimeout(() => loadHistory(currentUser), 100);
+        }
+        
+        async function loadHistory(username) {
+            try {
+                const response = await fetch('/api/mylinks/history', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username })
+                });
+                
+                const data = await response.json();
+                
+                if (data.error) {
+                    console.error('Error loading history:', data.error);
+                    document.getElementById('historySection').classList.remove('hidden');
+                    document.getElementById('searchHistory').innerHTML = '<p>Chyba načítání historie.</p>';
+                } else if (data.searches && Object.keys(data.searches).length > 0) {
+                    showHistory(data.searches);
+                } else {
+                    document.getElementById('historySection').classList.remove('hidden');
+                    const loadingMsg = document.getElementById('loadingMsg');
+                    if (loadingMsg) loadingMsg.style.display = 'none';
+                    document.getElementById('searchHistory').innerHTML = '<p>Zatím jste nic nehledali přes addon.</p>';
+                }
+            } catch (error) {
+                console.error('Failed to load history:', error);
+            }
         }
         
         // Cookie helpers
@@ -2813,10 +2877,10 @@ app.get('/mylinks', async (req, res) => {
                 return;
             }
             
-            // Seřadit podle posledního vyhledávání
-            const sorted = Object.entries(searches).sort((a, b) => {
-                return new Date(b[1].last_search) - new Date(a[1].last_search);
-            });
+            // Seřadit podle posledního vyhledávání a vzít max 10
+            const sorted = Object.entries(searches)
+                .sort((a, b) => new Date(b[1].last_search) - new Date(a[1].last_search))
+                .slice(0, 10);
             
             historyDiv.innerHTML = sorted.map(([query, stats]) => \`
                 <div class="search-item">
@@ -2880,23 +2944,13 @@ app.get('/mylinks', async (req, res) => {
     `);
 });
 
-// API endpoint - získat historii vyhledávání uživatele
+// API endpoint - získat historii vyhledávání uživatele (BEZ ověření hesla)
 app.post('/api/mylinks/history', async (req, res) => {
     try {
-        const { username, password } = req.body;
+        const { username } = req.body;
         
-        if (!username || !password) {
-            return res.json({ error: 'Missing credentials' });
-        }
-        
-        // Ověřit Webshare login
-        try {
-            const saltedPassword = await saltPassword(username, password);
-            const token = await login(username, saltedPassword);
-            console.log('✅ Login successful for', username);
-        } catch (error) {
-            console.error('❌ Login failed:', error.message);
-            return res.json({ error: 'Neplatné přihlašovací údaje: ' + error.message });
+        if (!username) {
+            return res.json({ error: 'Missing username' });
         }
         
         // Získat historii z R2
