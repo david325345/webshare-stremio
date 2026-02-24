@@ -143,23 +143,38 @@ async function putToR2(key, data) {
     }
 }
 
-async function logSearch(username, query, resultsCount) {
+async function logSearch(username, query, resultsCount, imdbId, type) {
     try {
         const userKey = `user-searches/${username}.json`;
         let userSearches = await getFromR2(userKey) || {};
+        
+        // Získat poster z Cinemeta pokud máme IMDB ID
+        let poster = null;
+        if (imdbId && type) {
+            try {
+                const metaResp = await needle('get', `https://v3-cinemeta.strem.io/meta/${type}/${imdbId}.json`, { timeout: 3000 });
+                poster = metaResp.body?.meta?.poster || null;
+            } catch (err) {
+                console.log('Failed to fetch poster:', err.message);
+            }
+        }
         
         if (!userSearches[query]) {
             userSearches[query] = {
                 count: 0,
                 first_search: new Date().toISOString(),
                 last_search: new Date().toISOString(),
-                results_count: resultsCount
+                results_count: resultsCount,
+                poster: poster
             };
         }
         
         userSearches[query].count += 1;
         userSearches[query].last_search = new Date().toISOString();
         userSearches[query].results_count = resultsCount;
+        if (poster && !userSearches[query].poster) {
+            userSearches[query].poster = poster;
+        }
         
         await putToR2(userKey, userSearches);
         console.log(`✅ Logged search for ${username}: "${query}" (${resultsCount} results)`);
@@ -258,7 +273,7 @@ async function restoreBackup(backupData, restoredBy) {
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '7.11.2', // Simplify: Back to gradient icons, TMDB API causes template string issues
+    version: '7.12.0', // Add Cinemeta API for real posters in My Links history
     name: 'Webshare Anime',
     description: 'Anime a filmy z Webshare.cz s vyhledáváním',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -2086,7 +2101,10 @@ ${languages.join('+')} 📺 ${qualityStr} 💾${sizeStr}`;
         // Zalogovat TT/IMDB/KITSU vyhledávání (NE webshare- přímé vyhledávání)
         if (!args.id.startsWith('webshare-') && validStreams.length > 0 && username && searchQueries.length > 0) {
             const mainQuery = searchQueries[0];
-            logSearch(username, `${args.id.split(':')[0]}: ${mainQuery}`, validStreams.length).catch(err => {
+            const idParts = args.id.split(':');
+            const imdbId = idParts[0]; // tt1234567 nebo kitsu
+            const type = args.type; // movie nebo series
+            logSearch(username, `${idParts[0]}: ${mainQuery}`, validStreams.length, imdbId, type).catch(err => {
                 console.error('R2 logging failed:', err.message);
             });
         }
@@ -3112,26 +3130,28 @@ app.get('/mylinks', async (req, res) => {
                 const manual = manualLinks[query];
                 const hasManualLink = !!manual;
                 
-                // Extrahovat ID a typ pro ikonu
-                let icon = '🎬';
+                // Extrahovat název a poster
                 let title = query;
+                let posterUrl = stats.poster || 'https://via.placeholder.com/60x90/667eea/ffffff?text=?';
                 
-                // IMDB/TMDB
-                if (query.match(/tt\d+/)) {
-                    icon = '🎬';
+                // IMDB/TMDB - odstranit tt prefix
+                if (query.match(/tt\\d+/)) {
                     title = query.replace(/^tt\\d+:\\s*/, '');
                 }
                 
-                // Kitsu (anime)
+                // Kitsu - odstranit kitsu prefix
                 if (query.includes('kitsu:')) {
-                    icon = '🌸';
                     title = query.replace(/^kitsu:\\d+:\\s*/, '');
                 }
                 
                 return \`
                 <div class="search-item" style="display: flex; gap: 15px; align-items: start;">
-                    <div style="width: 60px; height: 90px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 32px; flex-shrink: 0;">
-                        \${icon}
+                    <img src="\${posterUrl}" 
+                         alt="Poster" 
+                         style="width: 60px; height: 90px; object-fit: cover; border-radius: 8px; flex-shrink: 0; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);"
+                         onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
+                    <div style="width: 60px; height: 90px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 8px; display: none; align-items: center; justify-content: center; font-size: 32px; flex-shrink: 0;">
+                        🎬
                     </div>
                     <div style="flex: 1;">
                         <div class="search-query">\${title}</div>
