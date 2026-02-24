@@ -17,7 +17,6 @@
   "license": "MIT",
   "dependencies": {
     "@aws-sdk/client-s3": "^3.705.0",
-    "apache-crypt": "^1.2.6",
     "stremio-addon-sdk": "^1.6.10",
     "needle": "^3.3.1",
     "sha1": "^1.1.1",

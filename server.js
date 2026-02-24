@@ -1,9 +1,92 @@
 const { addonBuilder, getRouter } = require('stremio-addon-sdk');
 const needle = require('needle');
-const crypt = require('apache-crypt');
+const crypto = require('crypto');
 const sha1 = require('sha1');
 const xml2js = require('xml2js');
 const { S3Client, GetObjectCommand, PutObjectCommand } = require('@aws-sdk/client-s3');
+
+// Vlastní implementace MD5-crypt (kompatibilní s PHP/Apache)
+function md5crypt(password, salt) {
+    // Odstranit $1$ prefix pokud existuje
+    salt = salt.replace(/^\$1\$/, '').split('$')[0];
+    
+    // MD5-crypt algoritmus
+    const magic = '$1$';
+    
+    // Alternate sum
+    let ctx1 = crypto.createHash('md5');
+    ctx1.update(password);
+    ctx1.update(salt);
+    ctx1.update(password);
+    let final = ctx1.digest();
+    
+    // Primary sum
+    let ctx = crypto.createHash('md5');
+    ctx.update(password);
+    ctx.update(magic);
+    ctx.update(salt);
+    
+    // Add alternate sum
+    for (let pl = password.length; pl > 0; pl -= 16) {
+        ctx.update(final.slice(0, pl > 16 ? 16 : pl));
+    }
+    
+    // Add password bits
+    for (let i = password.length; i > 0; i >>= 1) {
+        if (i & 1) {
+            ctx.update(Buffer.from([0]));
+        } else {
+            ctx.update(password[0]);
+        }
+    }
+    
+    final = ctx.digest();
+    
+    // Iterate 1000 times
+    for (let i = 0; i < 1000; i++) {
+        let ctx1 = crypto.createHash('md5');
+        if (i & 1) {
+            ctx1.update(password);
+        } else {
+            ctx1.update(final);
+        }
+        if (i % 3) {
+            ctx1.update(salt);
+        }
+        if (i % 7) {
+            ctx1.update(password);
+        }
+        if (i & 1) {
+            ctx1.update(final);
+        } else {
+            ctx1.update(password);
+        }
+        final = ctx1.digest();
+    }
+    
+    // Convert to base64-like encoding
+    const itoa64 = './0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
+    let result = magic + salt + '$';
+    
+    const encode = (b0, b1, b2, n) => {
+        let w = (b0 << 16) | (b1 << 8) | b2;
+        let output = '';
+        for (let i = 0; i < n; i++) {
+            output += itoa64[w & 0x3f];
+            w >>= 6;
+        }
+        return output;
+    };
+    
+    result += encode(final[0], final[6], final[12], 4);
+    result += encode(final[1], final[7], final[13], 4);
+    result += encode(final[2], final[8], final[14], 4);
+    result += encode(final[3], final[9], final[15], 4);
+    result += encode(final[4], final[10], final[5], 4);
+    result += encode(0, 0, final[11], 2);
+    
+    return result;
+}
 
 // R2 Cloud Storage setup
 const r2Client = new S3Client({
@@ -102,7 +185,7 @@ async function addManualLink(query, webshareIdent, addedBy, fileName) {
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '7.2.1', // FINAL: Clean v6.15.2 + R2 logging + My Links + apache-crypt for login
+    version: '7.3.0', // CRITICAL: Custom MD5-crypt implementation (no external package needed)
     name: 'Webshare Anime',
     description: 'Anime a filmy z Webshare.cz s vyhledáváním',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -175,7 +258,7 @@ async function saltPassword(username, password) {
     const params = `username_or_email=${encodeURIComponent(username)}`;
     const resp = await needle('post', 'https://webshare.cz/api/salt/', params, { headers });
     const salt = resp.body.children.find(el => el.name == 'salt').value;
-    return sha1(crypt(password, salt));
+    return sha1(md5crypt(password, salt));
 }
 
 async function login(username, saltedPassword) {
