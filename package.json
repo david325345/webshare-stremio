@@ -1,20 +1,31 @@
 {
   "name": "stremio-webshare-addon",
-  "version": "1.0.0",
+  "version": "7.0.0",
+  "description": "Stremio addon for Webshare.cz with anime support, TMDB metadata, and R2 cloud logging",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
   },
+  "keywords": [
+    "stremio",
+    "addon",
+    "webshare",
+    "anime",
+    "streaming"
+  ],
+  "author": "David",
+  "license": "MIT",
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.705.0",
+    "stremio-addon-sdk": "^1.6.10",
+    "needle": "^3.3.1",
+    "cryptmd5": "^1.0.1",
+    "sha1": "^1.1.1",
+    "xml2js": "^0.6.2",
+    "node-cron": "^3.0.3",
+    "express": "^4.21.2"
+  },
   "engines": {
     "node": ">=18.0.0"
-  },
-  "dependencies": {
-    "cryptmd5": "^0.1.2",
-    "express": "^5.1.0",
-    "needle": "^3.3.1",
-    "node-cron": "^3.0.3",
-    "sha1": "^1.1.1",
-    "stremio-addon-sdk": "^1.6.10",
-    "xml2js": "^0.6.2"
   }
 }
