@@ -107,7 +107,7 @@ async function addManualLink(query, webshareIdent, addedBy, fileName) {
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '7.0.3', // Add JSON body parser + auto-login to My Links from install form
+    version: '7.0.4', // Fix: Show loading, hide login form, better error messages for My Links
     name: 'Webshare Anime',
     description: 'Anime a filmy z Webshare.cz s vyhledáváním',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -2649,7 +2649,7 @@ app.get('/mylinks', async (req, res) => {
 <body>
     <h1>🔗 My Links - Správa manuálních linků</h1>
     
-    <div id="loginSection" class="login-form">
+    <div id="loginSection" class="login-form" style="display: ${autoUsername ? 'none' : 'block'}">
         <h2>Přihlášení</h2>
         <p>Použijte své Webshare přihlašovací údaje:</p>
         <div class="form-group">
@@ -2664,9 +2664,12 @@ app.get('/mylinks', async (req, res) => {
         <p id="loginError" class="error hidden"></p>
     </div>
     
-    <div id="historySection" class="hidden">
-        <h2>📊 Vaše historie vyhledávání</h2>
-        <p>Zde vidíte co jste hledali a můžete přidat manuální linky.</p>
+    <div id="historySection" class="${autoUsername ? '' : 'hidden'}">
+        <div id="loadingMsg" style="text-align: center; padding: 20px; ${autoUsername ? '' : 'display: none;'}">
+            <p style="color: #00d9ff; font-size: 18px;">⏳ Načítám vaši historii vyhledávání...</p>
+        </div>
+        <h2 style="display: none;" id="histTitle">📊 Vaše historie vyhledávání</h2>
+        <p style="display: none;" id="histDesc">Zde vidíte co jste hledali a můžete přidat manuální linky.</p>
         <div id="searchHistory"></div>
     </div>
     
@@ -2764,8 +2767,18 @@ app.get('/mylinks', async (req, res) => {
         }
         
         function showHistory(searches) {
-            document.getElementById('loginSection').classList.add('hidden');
+            // Skrýt loading a login
+            const loadingMsg = document.getElementById('loadingMsg');
+            if (loadingMsg) loadingMsg.style.display = 'none';
+            
+            document.getElementById('loginSection').style.display = 'none';
             document.getElementById('historySection').classList.remove('hidden');
+            
+            // Zobrazit nadpisy
+            const title = document.getElementById('histTitle');
+            const desc = document.getElementById('histDesc');
+            if (title) title.style.display = 'block';
+            if (desc) desc.style.display = 'block';
             
             const historyDiv = document.getElementById('searchHistory');
             
@@ -2853,9 +2866,11 @@ app.post('/api/mylinks/history', async (req, res) => {
         // Ověřit Webshare login
         try {
             const saltedPassword = await saltPassword(username, password);
-            await login(username, saltedPassword);
+            const token = await login(username, saltedPassword);
+            console.log('✅ Login successful for', username);
         } catch (error) {
-            return res.json({ error: 'Neplatné přihlašovací údaje' });
+            console.error('❌ Login failed:', error.message);
+            return res.json({ error: 'Neplatné přihlašovací údaje: ' + error.message });
         }
         
         // Získat historii z R2
