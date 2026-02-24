@@ -107,7 +107,7 @@ async function addManualLink(query, webshareIdent, addedBy, fileName) {
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '7.0.1', // Add enable_logging toggle + cookies for My Links login
+    version: '7.0.2', // Fix: Template string syntax error in R2 calls
     name: 'Webshare Anime',
     description: 'Anime a filmy z Webshare.cz s vyhledáváním',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -2833,7 +2833,7 @@ app.post('/api/mylinks/history', async (req, res) => {
         }
         
         // Získat historii z R2
-        const searches = await getFromR2(\`user-searches/\${username}.json\`);
+        const searches = await getFromR2(`user-searches/${username}.json`);
         
         res.json({ searches: searches || {} });
         
