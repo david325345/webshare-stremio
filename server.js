@@ -2729,8 +2729,8 @@ app.get('/mylinks', async (req, res) => {
         <p id="loginError" class="error hidden"></p>
     </div>
     
-    <div id="historySection" class="${autoUsername ? '' : 'hidden'}">
-        <div id="loadingMsg" style="text-align: center; padding: 20px; ${autoUsername ? '' : 'display: none;'}">
+    <div id="historySection" class="${username ? '' : 'hidden'}">
+        <div id="loadingMsg" style="text-align: center; padding: 20px; ${username ? '' : 'display: none;'}">
             <p style="color: #00d9ff; font-size: 18px;">⏳ Načítám vaši historii vyhledávání...</p>
         </div>
         <h2 style="display: none;" id="histTitle">📊 Vaše historie vyhledávání</h2>
