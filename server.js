@@ -1,6 +1,6 @@
 const { addonBuilder, getRouter } = require('stremio-addon-sdk');
 const needle = require('needle');
-const CryptoJS = require('crypto-js');
+const crypto = require('crypto');
 const sha1 = require('sha1');
 const xml2js = require('xml2js');
 const { S3Client, GetObjectCommand, PutObjectCommand } = require('@aws-sdk/client-s3');
@@ -107,7 +107,7 @@ async function addManualLink(query, webshareIdent, addedBy, fileName) {
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '7.0.4', // Fix: Show loading, hide login form, better error messages for My Links
+    version: '7.1.1', // Fix: Correct PHP-style MD5 crypt for Webshare (md5(md5(pass).salt))
     name: 'Webshare Anime',
     description: 'Anime a filmy z Webshare.cz s vyhledáváním',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -186,8 +186,11 @@ async function saltPassword(username, password) {
     const params = `username_or_email=${encodeURIComponent(username)}`;
     const resp = await needle('post', 'https://webshare.cz/api/salt/', params, { headers });
     const salt = resp.body.children.find(el => el.name == 'salt').value;
-    const md5Hash = CryptoJS.MD5(password + salt).toString();
-    return sha1(md5Hash);
+    
+    // Webshare používá PHP-style MD5 crypt: md5(md5(password) . salt)
+    const passwordMd5 = crypto.createHash('md5').update(password).digest('hex');
+    const salted = crypto.createHash('md5').update(passwordMd5 + salt).digest('hex');
+    return sha1(salted);
 }
 
 async function login(username, saltedPassword) {
@@ -1874,6 +1877,14 @@ async function handleStreamRequest(args) {
         console.log('=== RESPONSE READY ===');
         console.log('Response object:', JSON.stringify(response, null, 2).substring(0, 500));
         
+        // Zalogovat TT/IMDB/KITSU vyhledávání (NE webshare- přímé vyhledávání)
+        if (!args.id.startsWith('webshare-') && validStreams.length > 0 && username && searchQueries.length > 0) {
+            const mainQuery = searchQueries[0]; // První (nejdůležitější) název
+            logSearch(username, `${args.id.split(':')[0]}: ${mainQuery}`, validStreams.length).catch(err => {
+                console.error('R2 logging failed:', err.message);
+            });
+        }
+        
         return response;
     } catch (error) {
         console.error('=== STREAM HANDLER ERROR ===');
@@ -1985,12 +1996,7 @@ async function handleCatalogRequest(args) {
         
         console.log(`Returning ${metas.length} metas`);
         
-        // Zalogovat vyhledávání do R2 (pouze pokud má uživatel povoleno)
-        if (args.config?.enable_logging !== false) {
-            logSearch(username, searchQuery, metas.length).catch(err => {
-                console.error('R2 logging failed:', err.message);
-            });
-        }
+        // PŘÍMÉ VYHLEDÁVÁNÍ SE NELOGUJE (podle požadavku uživatele)
         
         return { metas };
         
