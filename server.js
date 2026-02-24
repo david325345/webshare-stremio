@@ -5,8 +5,6 @@ const sha1 = require('sha1');
 const xml2js = require('xml2js');
 const { S3Client, GetObjectCommand, PutObjectCommand } = require('@aws-sdk/client-s3');
 
-const { S3Client, GetObjectCommand, PutObjectCommand } = require('@aws-sdk/client-s3');
-
 // R2 Cloud Storage setup
 const r2Client = new S3Client({
     region: 'auto',
