@@ -1,6 +1,6 @@
 {
   "name": "stremio-webshare-addon",
-  "version": "7.0.0",
+  "version": "7.2.1",
   "description": "Stremio addon for Webshare.cz with anime support, TMDB metadata, and R2 cloud logging",
   "main": "server.js",
   "scripts": {
@@ -17,7 +17,7 @@
   "license": "MIT",
   "dependencies": {
     "@aws-sdk/client-s3": "^3.705.0",
-    "apache-md5": "^1.1.8",
+    "apache-crypt": "^1.2.6",
     "stremio-addon-sdk": "^1.6.10",
     "needle": "^3.3.1",
     "sha1": "^1.1.1",

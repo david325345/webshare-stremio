@@ -1,8 +1,10 @@
 const { addonBuilder, getRouter } = require('stremio-addon-sdk');
 const needle = require('needle');
-const md5crypt = require('apache-md5');
+const crypt = require('apache-crypt');
 const sha1 = require('sha1');
 const xml2js = require('xml2js');
+const { S3Client, GetObjectCommand, PutObjectCommand } = require('@aws-sdk/client-s3');
+
 const { S3Client, GetObjectCommand, PutObjectCommand } = require('@aws-sdk/client-s3');
 
 // R2 Cloud Storage setup
@@ -16,7 +18,7 @@ const r2Client = new S3Client({
 });
 
 const R2_BUCKET = process.env.R2_BUCKET_NAME || 'titulky-cache';
-const R2_PREFIX = 'webshare-addon/'; // Prefix pro izolaci od ostatních projektů
+const R2_PREFIX = 'webshare-addon/';
 
 // R2 Helper Functions
 async function getFromR2(key) {
@@ -30,7 +32,7 @@ async function getFromR2(key) {
         return JSON.parse(body);
     } catch (error) {
         if (error.name === 'NoSuchKey') {
-            return null; // Soubor neexistuje
+            return null;
         }
         console.error('R2 GET error:', error.message);
         return null;
@@ -55,11 +57,9 @@ async function putToR2(key, data) {
 
 async function logSearch(username, query, resultsCount) {
     try {
-        // Získat existující historii uživatele
         const userKey = `user-searches/${username}.json`;
         let userSearches = await getFromR2(userKey) || {};
         
-        // Aktualizovat statistiky pro tento search query
         if (!userSearches[query]) {
             userSearches[query] = {
                 count: 0,
@@ -73,7 +73,6 @@ async function logSearch(username, query, resultsCount) {
         userSearches[query].last_search = new Date().toISOString();
         userSearches[query].results_count = resultsCount;
         
-        // Uložit zpět do R2
         await putToR2(userKey, userSearches);
         console.log(`✅ Logged search for ${username}: "${query}" (${resultsCount} results)`);
     } catch (error) {
@@ -88,14 +87,12 @@ async function getManualLinks() {
 async function addManualLink(query, webshareIdent, addedBy, fileName) {
     try {
         const manualLinks = await getManualLinks();
-        
         manualLinks[query] = {
             webshare_ident: webshareIdent,
             added_by: addedBy,
             added_at: new Date().toISOString(),
             file_name: fileName
         };
-        
         await putToR2('manual-links.json', manualLinks);
         console.log(`✅ Manual link added: "${query}" → ${webshareIdent}`);
         return true;
@@ -107,7 +104,7 @@ async function addManualLink(query, webshareIdent, addedBy, fileName) {
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '7.2.0', // CRITICAL FIX: Use apache-md5 (correct MD5-crypt algorithm for Webshare)
+    version: '7.2.1', // FINAL: Clean v6.15.2 + R2 logging + My Links + apache-crypt for login
     name: 'Webshare Anime',
     description: 'Anime a filmy z Webshare.cz s vyhledáváním',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -153,12 +150,6 @@ const manifest = {
             type: 'checkbox',
             title: 'Enable Direct Search (Webshare Hledat catalog)',
             default: true
-        },
-        {
-            key: 'enable_logging',
-            type: 'checkbox',
-            title: 'Enable Search Logging (history in My Links)',
-            default: true
         }
     ]
 };
@@ -186,10 +177,7 @@ async function saltPassword(username, password) {
     const params = `username_or_email=${encodeURIComponent(username)}`;
     const resp = await needle('post', 'https://webshare.cz/api/salt/', params, { headers });
     const salt = resp.body.children.find(el => el.name == 'salt').value;
-    
-    // Webshare používá Apache MD5-crypt algoritmus
-    const crypted = md5crypt(password, salt);
-    return sha1(crypted);
+    return sha1(crypt(password, salt));
 }
 
 async function login(username, saltedPassword) {
@@ -1878,7 +1866,7 @@ async function handleStreamRequest(args) {
         
         // Zalogovat TT/IMDB/KITSU vyhledávání (NE webshare- přímé vyhledávání)
         if (!args.id.startsWith('webshare-') && validStreams.length > 0 && username && searchQueries.length > 0) {
-            const mainQuery = searchQueries[0]; // První (nejdůležitější) název
+            const mainQuery = searchQueries[0];
             logSearch(username, `${args.id.split(':')[0]}: ${mainQuery}`, validStreams.length).catch(err => {
                 console.error('R2 logging failed:', err.message);
             });
@@ -1942,30 +1930,6 @@ async function handleCatalogRequest(args) {
         // Vyhledat na Webshare
         const results = await search(searchQuery, token);
         
-        // Zkontrolovat jestli existuje manuální link pro tento search
-        const manualLinks = await getManualLinks();
-        const manualLink = manualLinks[searchQuery];
-        
-        if (manualLink) {
-            console.log(`Found manual link for "${searchQuery}": ${manualLink.webshare_ident}`);
-            // Přidat manuální link na začátek výsledků
-            try {
-                const manualFileInfo = await getFileInfo(manualLink.webshare_ident, token);
-                if (manualFileInfo) {
-                    results.unshift({
-                        ident: manualLink.webshare_ident,
-                        name: manualFileInfo.name,
-                        img: manualFileInfo.img,
-                        size: manualFileInfo.size,
-                        positive_votes: manualFileInfo.positive_votes,
-                        negative_votes: manualFileInfo.negative_votes
-                    });
-                }
-            } catch (error) {
-                console.log('Failed to fetch manual link file info:', error.message);
-            }
-        }
-        
         if (results.length === 0) {
             console.log('No results found');
             return { metas: [] };
@@ -1994,9 +1958,6 @@ async function handleCatalogRequest(args) {
         });
         
         console.log(`Returning ${metas.length} metas`);
-        
-        // PŘÍMÉ VYHLEDÁVÁNÍ SE NELOGUJE (podle požadavku uživatele)
-        
         return { metas };
         
     } catch (error) {
@@ -2134,10 +2095,6 @@ console.log('✅ Keep-alive scheduler initialized');
 // ========== EXPRESS SERVER ==========
 const app = express();
 
-// JSON body parser - MUSÍ BÝT PŘED routes!
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
-
 // CORS middleware
 app.use((req, res, next) => {
     // Log pouze API requesty, ne statické soubory
@@ -2264,23 +2221,10 @@ app.get('/', (req, res) => {
             </label>
         </div>
         
-        <div class="form-group">
-            <label style="display: flex; align-items: center; cursor: pointer;">
-                <input type="checkbox" id="enable_logging" name="enable_logging" checked style="width: auto; margin-right: 10px;">
-                <span>Enable Search Logging (history in My Links)</span>
-            </label>
-        </div>
-        
         <button type="submit" class="install-btn">
             🔗 Vygenerovat instalační link
         </button>
     </form>
-    
-    <div style="margin-top: 20px; text-align: center;">
-        <a href="/mylinks" style="color: #00d9ff; text-decoration: none; font-size: 16px;">
-            🔗 My Links - Správa manuálních linků
-        </a>
-    </div>
     
     <div id="installLinkContainer" style="display: none; margin-top: 20px;">
         <div class="note">
@@ -2292,12 +2236,9 @@ app.get('/', (req, res) => {
                 <button onclick="copyInstallLink()" style="padding: 10px 20px; background: #00d9ff; color: #1a1a2e; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; margin-right: 10px;">
                     📋 Zkopírovat
                 </button>
-                <button onclick="installNow()" style="padding: 10px 20px; background: #7b2cbf; color: white; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; margin-right: 10px;">
+                <button onclick="installNow()" style="padding: 10px 20px; background: #7b2cbf; color: white; border: none; border-radius: 5px; cursor: pointer; font-weight: bold;">
                     🚀 Nainstalovat
                 </button>
-                <a id="myLinksBtn" href="/mylinks" target="_blank" style="display: none; padding: 10px 20px; background: #9d4edd; color: white; border-radius: 5px; text-decoration: none; font-weight: bold;">
-                    🔗 My Links
-                </a>
             </div>
         </div>
         <div class="note" style="margin-top: 10px; background: #2d1b00; border-left-color: #ff9500;">
@@ -2356,7 +2297,6 @@ app.get('/', (req, res) => {
             const password = document.getElementById('password').value.trim();
             const tmdb = document.getElementById('tmdb').value.trim();
             const enableDirectSearch = document.getElementById('enable_direct_search').checked;
-            const enableLogging = document.getElementById('enable_logging').checked;
             
             if (!username || !password) {
                 alert('⚠️ Username a password jsou povinné!');
@@ -2368,8 +2308,7 @@ app.get('/', (req, res) => {
                 username: username,
                 password: password,
                 tmdb_api_key: tmdb || '',
-                enable_direct_search: enableDirectSearch,
-                enable_logging: enableLogging
+                enable_direct_search: enableDirectSearch
             };
             
             // Base64 encode config pro personal URL
@@ -2382,14 +2321,6 @@ app.get('/', (req, res) => {
             // Zobrazíme link
             document.getElementById('installLinkDisplay').textContent = installUrl;
             document.getElementById('installLinkContainer').style.display = 'block';
-            
-            // Vytvoříme My Links URL s credentials
-            const myLinksUrl = \`/mylinks?username=\${encodeURIComponent(username)}&password=\${encodeURIComponent(password)}\`;
-            const myLinksBtn = document.getElementById('myLinksBtn');
-            if (myLinksBtn) {
-                myLinksBtn.href = myLinksUrl;
-                myLinksBtn.style.display = 'inline-block';
-            }
             
             // Scrollujeme k linku
             document.getElementById('installLinkContainer').scrollIntoView({ behavior: 'smooth' });
