@@ -1,113 +1,12 @@
 const { addonBuilder, getRouter } = require('stremio-addon-sdk');
 const needle = require('needle');
-const CryptoJS = require('crypto-js');
+const md5 = require('cryptmd5');
 const sha1 = require('sha1');
 const xml2js = require('xml2js');
-const { S3Client, GetObjectCommand, PutObjectCommand } = require('@aws-sdk/client-s3');
-
-// R2 Cloud Storage setup
-const r2Client = new S3Client({
-    region: 'auto',
-    endpoint: `https://${process.env.CLOUDFLARE_ACCOUNT_ID}.r2.cloudflarestorage.com`,
-    credentials: {
-        accessKeyId: process.env.R2_ACCESS_KEY_ID || '',
-        secretAccessKey: process.env.R2_SECRET_ACCESS_KEY || ''
-    }
-});
-
-const R2_BUCKET = process.env.R2_BUCKET_NAME || 'titulky-cache';
-const R2_PREFIX = 'webshare-addon/'; // Prefix pro izolaci od ostatních projektů
-
-// R2 Helper Functions
-async function getFromR2(key) {
-    try {
-        const command = new GetObjectCommand({
-            Bucket: R2_BUCKET,
-            Key: R2_PREFIX + key
-        });
-        const response = await r2Client.send(command);
-        const body = await response.Body.transformToString();
-        return JSON.parse(body);
-    } catch (error) {
-        if (error.name === 'NoSuchKey') {
-            return null; // Soubor neexistuje
-        }
-        console.error('R2 GET error:', error.message);
-        return null;
-    }
-}
-
-async function putToR2(key, data) {
-    try {
-        const command = new PutObjectCommand({
-            Bucket: R2_BUCKET,
-            Key: R2_PREFIX + key,
-            Body: JSON.stringify(data, null, 2),
-            ContentType: 'application/json'
-        });
-        await r2Client.send(command);
-        return true;
-    } catch (error) {
-        console.error('R2 PUT error:', error.message);
-        return false;
-    }
-}
-
-async function logSearch(username, query, resultsCount) {
-    try {
-        // Získat existující historii uživatele
-        const userKey = `user-searches/${username}.json`;
-        let userSearches = await getFromR2(userKey) || {};
-        
-        // Aktualizovat statistiky pro tento search query
-        if (!userSearches[query]) {
-            userSearches[query] = {
-                count: 0,
-                first_search: new Date().toISOString(),
-                last_search: new Date().toISOString(),
-                results_count: resultsCount
-            };
-        }
-        
-        userSearches[query].count += 1;
-        userSearches[query].last_search = new Date().toISOString();
-        userSearches[query].results_count = resultsCount;
-        
-        // Uložit zpět do R2
-        await putToR2(userKey, userSearches);
-        console.log(`✅ Logged search for ${username}: "${query}" (${resultsCount} results)`);
-    } catch (error) {
-        console.error('Failed to log search:', error.message);
-    }
-}
-
-async function getManualLinks() {
-    return await getFromR2('manual-links.json') || {};
-}
-
-async function addManualLink(query, webshareIdent, addedBy, fileName) {
-    try {
-        const manualLinks = await getManualLinks();
-        
-        manualLinks[query] = {
-            webshare_ident: webshareIdent,
-            added_by: addedBy,
-            added_at: new Date().toISOString(),
-            file_name: fileName
-        };
-        
-        await putToR2('manual-links.json', manualLinks);
-        console.log(`✅ Manual link added: "${query}" → ${webshareIdent}`);
-        return true;
-    } catch (error) {
-        console.error('Failed to add manual link:', error.message);
-        return false;
-    }
-}
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '7.0.1', // Add enable_logging toggle + cookies for My Links login
+    version: '6.15.2', // Update feature list on landing page
     name: 'Webshare Anime',
     description: 'Anime a filmy z Webshare.cz s vyhledáváním',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -153,12 +52,6 @@ const manifest = {
             type: 'checkbox',
             title: 'Enable Direct Search (Webshare Hledat catalog)',
             default: true
-        },
-        {
-            key: 'enable_logging',
-            type: 'checkbox',
-            title: 'Enable Search Logging (history in My Links)',
-            default: true
         }
     ]
 };
@@ -186,8 +79,7 @@ async function saltPassword(username, password) {
     const params = `username_or_email=${encodeURIComponent(username)}`;
     const resp = await needle('post', 'https://webshare.cz/api/salt/', params, { headers });
     const salt = resp.body.children.find(el => el.name == 'salt').value;
-    const md5Hash = CryptoJS.MD5(password + salt).toString();
-    return sha1(md5Hash);
+    return sha1(md5.cryptMD5(password, salt));
 }
 
 async function login(username, saltedPassword) {
@@ -1932,30 +1824,6 @@ async function handleCatalogRequest(args) {
         // Vyhledat na Webshare
         const results = await search(searchQuery, token);
         
-        // Zkontrolovat jestli existuje manuální link pro tento search
-        const manualLinks = await getManualLinks();
-        const manualLink = manualLinks[searchQuery];
-        
-        if (manualLink) {
-            console.log(`Found manual link for "${searchQuery}": ${manualLink.webshare_ident}`);
-            // Přidat manuální link na začátek výsledků
-            try {
-                const manualFileInfo = await getFileInfo(manualLink.webshare_ident, token);
-                if (manualFileInfo) {
-                    results.unshift({
-                        ident: manualLink.webshare_ident,
-                        name: manualFileInfo.name,
-                        img: manualFileInfo.img,
-                        size: manualFileInfo.size,
-                        positive_votes: manualFileInfo.positive_votes,
-                        negative_votes: manualFileInfo.negative_votes
-                    });
-                }
-            } catch (error) {
-                console.log('Failed to fetch manual link file info:', error.message);
-            }
-        }
-        
         if (results.length === 0) {
             console.log('No results found');
             return { metas: [] };
@@ -1984,14 +1852,6 @@ async function handleCatalogRequest(args) {
         });
         
         console.log(`Returning ${metas.length} metas`);
-        
-        // Zalogovat vyhledávání do R2 (pouze pokud má uživatel povoleno)
-        if (args.config?.enable_logging !== false) {
-            logSearch(username, searchQuery, metas.length).catch(err => {
-                console.error('R2 logging failed:', err.message);
-            });
-        }
-        
         return { metas };
         
     } catch (error) {
@@ -2255,23 +2115,10 @@ app.get('/', (req, res) => {
             </label>
         </div>
         
-        <div class="form-group">
-            <label style="display: flex; align-items: center; cursor: pointer;">
-                <input type="checkbox" id="enable_logging" name="enable_logging" checked style="width: auto; margin-right: 10px;">
-                <span>Enable Search Logging (history in My Links)</span>
-            </label>
-        </div>
-        
         <button type="submit" class="install-btn">
             🔗 Vygenerovat instalační link
         </button>
     </form>
-    
-    <div style="margin-top: 20px; text-align: center;">
-        <a href="/mylinks" style="color: #00d9ff; text-decoration: none; font-size: 16px;">
-            🔗 My Links - Správa manuálních linků
-        </a>
-    </div>
     
     <div id="installLinkContainer" style="display: none; margin-top: 20px;">
         <div class="note">
@@ -2344,7 +2191,6 @@ app.get('/', (req, res) => {
             const password = document.getElementById('password').value.trim();
             const tmdb = document.getElementById('tmdb').value.trim();
             const enableDirectSearch = document.getElementById('enable_direct_search').checked;
-            const enableLogging = document.getElementById('enable_logging').checked;
             
             if (!username || !password) {
                 alert('⚠️ Username a password jsou povinné!');
@@ -2356,8 +2202,7 @@ app.get('/', (req, res) => {
                 username: username,
                 password: password,
                 tmdb_api_key: tmdb || '',
-                enable_direct_search: enableDirectSearch,
-                enable_logging: enableLogging
+                enable_direct_search: enableDirectSearch
             };
             
             // Base64 encode config pro personal URL
@@ -2543,334 +2388,6 @@ app.get('/:userConfig/meta/:type/:id.json', async (req, res) => {
 // Personal routes (:userConfig/*) zajišťují všechnu funkcionalitu
 // const addonRouter = getRouter(builder.getInterface());
 // app.use(addonRouter);
-
-// ========== MY LINKS - Web rozhraní pro správu manuálních linků ==========
-app.get('/mylinks', async (req, res) => {
-    res.send(`
-<!DOCTYPE html>
-<html>
-<head>
-    <title>My Links - Webshare Addon</title>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <style>
-        body { 
-            font-family: Arial, sans-serif; 
-            max-width: 900px; 
-            margin: 50px auto; 
-            padding: 20px;
-            background: #1a1a2e;
-            color: #eee;
-        }
-        h1 { color: #00d9ff; }
-        h2 { color: #9d4edd; margin-top: 30px; }
-        .login-form {
-            background: #16213e;
-            padding: 20px;
-            border-radius: 10px;
-            margin: 20px 0;
-        }
-        .form-group {
-            margin: 15px 0;
-        }
-        label {
-            display: block;
-            margin-bottom: 5px;
-            color: #00d9ff;
-        }
-        input {
-            width: 100%;
-            padding: 10px;
-            background: #0d1b2a;
-            border: 1px solid #00d9ff;
-            border-radius: 5px;
-            color: #eee;
-            font-size: 14px;
-            box-sizing: border-box;
-        }
-        button {
-            background: #7b2cbf;
-            color: white;
-            padding: 10px 20px;
-            border: none;
-            border-radius: 5px;
-            cursor: pointer;
-            font-size: 16px;
-            margin-top: 10px;
-        }
-        button:hover { background: #9d4edd; }
-        .search-item {
-            background: #16213e;
-            padding: 15px;
-            margin: 10px 0;
-            border-radius: 8px;
-            border-left: 3px solid #00d9ff;
-        }
-        .search-query {
-            font-size: 18px;
-            font-weight: bold;
-            color: #00d9ff;
-            margin-bottom: 5px;
-        }
-        .search-stats {
-            color: #999;
-            font-size: 14px;
-            margin: 5px 0;
-        }
-        .add-link-form {
-            margin-top: 10px;
-            padding-top: 10px;
-            border-top: 1px solid #333;
-        }
-        .hidden { display: none; }
-        .success { color: #00ff00; }
-        .error { color: #ff0000; }
-    </style>
-</head>
-<body>
-    <h1>🔗 My Links - Správa manuálních linků</h1>
-    
-    <div id="loginSection" class="login-form">
-        <h2>Přihlášení</h2>
-        <p>Použijte své Webshare přihlašovací údaje:</p>
-        <div class="form-group">
-            <label>Username:</label>
-            <input type="text" id="username" placeholder="vase-jmeno">
-        </div>
-        <div class="form-group">
-            <label>Password:</label>
-            <input type="password" id="password" placeholder="••••••••">
-        </div>
-        <button onclick="login()">Přihlásit se</button>
-        <p id="loginError" class="error hidden"></p>
-    </div>
-    
-    <div id="historySection" class="hidden">
-        <h2>📊 Vaše historie vyhledávání</h2>
-        <p>Zde vidíte co jste hledali a můžete přidat manuální linky.</p>
-        <div id="searchHistory"></div>
-    </div>
-    
-    <script>
-        let currentUser = '';
-        
-        // Cookie helpers
-        function setCookie(name, value, days) {
-            const expires = new Date();
-            expires.setTime(expires.getTime() + days * 24 * 60 * 60 * 1000);
-            document.cookie = name + '=' + encodeURIComponent(value) + ';expires=' + expires.toUTCString() + ';path=/';
-        }
-        
-        function getCookie(name) {
-            const nameEQ = name + '=';
-            const ca = document.cookie.split(';');
-            for(let i = 0; i < ca.length; i++) {
-                let c = ca[i];
-                while (c.charAt(0) === ' ') c = c.substring(1, c.length);
-                if (c.indexOf(nameEQ) === 0) return decodeURIComponent(c.substring(nameEQ.length, c.length));
-            }
-            return null;
-        }
-        
-        // Auto-fill ze cookies při načtení stránky
-        window.onload = function() {
-            const savedUsername = getCookie('ws_username');
-            const savedPassword = getCookie('ws_password');
-            
-            if (savedUsername) {
-                document.getElementById('username').value = savedUsername;
-            }
-            if (savedPassword) {
-                document.getElementById('password').value = savedPassword;
-            }
-            
-            // Auto-login pokud máme credentials
-            if (savedUsername && savedPassword) {
-                // Počkat chvíli než se stránka načte
-                setTimeout(() => {
-                    const autoLogin = confirm('Máte uložené přihlašovací údaje. Přihlásit automaticky?');
-                    if (autoLogin) {
-                        login();
-                    }
-                }, 500);
-            }
-        };
-        
-        async function login() {
-            const username = document.getElementById('username').value.trim();
-            const password = document.getElementById('password').value.trim();
-            
-            if (!username || !password) {
-                showError('Vyplňte username a password!');
-                return;
-            }
-            
-            try {
-                const response = await fetch('/api/mylinks/history', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ username, password })
-                });
-                
-                const data = await response.json();
-                
-                if (data.error) {
-                    showError(data.error);
-                    return;
-                }
-                
-                // Uložit do cookies (platnost 30 dní)
-                setCookie('ws_username', username, 30);
-                setCookie('ws_password', password, 30);
-                
-                currentUser = username;
-                showHistory(data.searches);
-                
-            } catch (error) {
-                showError('Chyba připojení: ' + error.message);
-            }
-        }
-        
-        function showError(msg) {
-            const errorEl = document.getElementById('loginError');
-            errorEl.textContent = msg;
-            errorEl.classList.remove('hidden');
-        }
-        
-        function showHistory(searches) {
-            document.getElementById('loginSection').classList.add('hidden');
-            document.getElementById('historySection').classList.remove('hidden');
-            
-            const historyDiv = document.getElementById('searchHistory');
-            
-            if (!searches || Object.keys(searches).length === 0) {
-                historyDiv.innerHTML = '<p>Zatím jste nic nehledali.</p>';
-                return;
-            }
-            
-            // Seřadit podle posledního vyhledávání
-            const sorted = Object.entries(searches).sort((a, b) => {
-                return new Date(b[1].last_search) - new Date(a[1].last_search);
-            });
-            
-            historyDiv.innerHTML = sorted.map(([query, stats]) => \`
-                <div class="search-item">
-                    <div class="search-query">\${query}</div>
-                    <div class="search-stats">
-                        🔍 Hledáno: \${stats.count}x | 
-                        📦 Nalezeno: \${stats.results_count} souborů |
-                        🕒 Naposledy: \${new Date(stats.last_search).toLocaleString('cs-CZ')}
-                    </div>
-                    <div class="add-link-form">
-                        <input type="text" id="link_\${encodeURIComponent(query)}" placeholder="Webshare ident (např. ABC123) nebo URL" style="width: 70%; display: inline-block;">
-                        <button onclick="addLink('\${query.replace(/'/g, "\\\\'")}')">Přidat link</button>
-                        <p id="msg_\${encodeURIComponent(query)}" class="hidden"></p>
-                    </div>
-                </div>
-            \`).join('');
-        }
-        
-        async function addLink(query) {
-            const linkInput = document.getElementById('link_' + encodeURIComponent(query));
-            const link = linkInput.value.trim();
-            
-            if (!link) {
-                showMessage(query, 'Zadejte Webshare ident nebo URL!', 'error');
-                return;
-            }
-            
-            try {
-                const response = await fetch('/api/mylinks/add', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ 
-                        username: currentUser,
-                        query: query,
-                        link: link
-                    })
-                });
-                
-                const data = await response.json();
-                
-                if (data.success) {
-                    showMessage(query, '✅ Link přidán! Všichni uživatelé ho teď uvidí.', 'success');
-                    linkInput.value = '';
-                } else {
-                    showMessage(query, '❌ ' + data.error, 'error');
-                }
-                
-            } catch (error) {
-                showMessage(query, '❌ Chyba: ' + error.message, 'error');
-            }
-        }
-        
-        function showMessage(query, msg, type) {
-            const msgEl = document.getElementById('msg_' + encodeURIComponent(query));
-            msgEl.textContent = msg;
-            msgEl.className = type;
-        }
-    </script>
-</body>
-</html>
-    `);
-});
-
-// API endpoint - získat historii vyhledávání uživatele
-app.post('/api/mylinks/history', async (req, res) => {
-    try {
-        const { username, password } = req.body;
-        
-        if (!username || !password) {
-            return res.json({ error: 'Missing credentials' });
-        }
-        
-        // Ověřit Webshare login
-        try {
-            const saltedPassword = await saltPassword(username, password);
-            await login(username, saltedPassword);
-        } catch (error) {
-            return res.json({ error: 'Neplatné přihlašovací údaje' });
-        }
-        
-        // Získat historii z R2
-        const searches = await getFromR2(\`user-searches/\${username}.json\`);
-        
-        res.json({ searches: searches || {} });
-        
-    } catch (error) {
-        console.error('History API error:', error);
-        res.json({ error: 'Server error' });
-    }
-});
-
-// API endpoint - přidat manuální link
-app.post('/api/mylinks/add', async (req, res) => {
-    try {
-        const { username, query, link } = req.body;
-        
-        if (!username || !query || !link) {
-            return res.json({ error: 'Missing data', success: false });
-        }
-        
-        // Extrahovat webshare ident z URL nebo použít přímo
-        let ident = link;
-        if (link.includes('webshare.cz')) {
-            const match = link.match(/file\/([a-zA-Z0-9]+)/);
-            if (match) {
-                ident = match[1];
-            }
-        }
-        
-        // Přidat link
-        const success = await addManualLink(query, ident, username, 'N/A');
-        
-        res.json({ success });
-        
-    } catch (error) {
-        console.error('Add link API error:', error);
-        res.json({ error: 'Server error', success: false });
-    }
-});
 
 const PORT = process.env.PORT || 7000;
 app.listen(PORT, () => {
