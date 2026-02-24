@@ -2981,7 +2981,8 @@ app.get('/mylinks', async (req, res) => {
                         <p id="msg_\${encodeURIComponent(query)}" class="hidden"></p>
                     </div>
                 </div>
-            \`).join('');
+            \`;
+            }).join('');
         }
         
         async function addLink(query, encodedQuery) {
