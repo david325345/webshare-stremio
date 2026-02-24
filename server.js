@@ -1,6 +1,6 @@
 const { addonBuilder, getRouter } = require('stremio-addon-sdk');
 const needle = require('needle');
-const md5 = require('cryptmd5');
+const CryptoJS = require('crypto-js');
 const sha1 = require('sha1');
 const xml2js = require('xml2js');
 const { S3Client, GetObjectCommand, PutObjectCommand } = require('@aws-sdk/client-s3');
@@ -107,7 +107,7 @@ async function addManualLink(query, webshareIdent, addedBy, fileName) {
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '7.0.0', // MAJOR: R2 Cloud storage for search logging + manual links web interface
+    version: '7.0.1', // Add enable_logging toggle + cookies for My Links login
     name: 'Webshare Anime',
     description: 'Anime a filmy z Webshare.cz s vyhledáváním',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -153,6 +153,12 @@ const manifest = {
             type: 'checkbox',
             title: 'Enable Direct Search (Webshare Hledat catalog)',
             default: true
+        },
+        {
+            key: 'enable_logging',
+            type: 'checkbox',
+            title: 'Enable Search Logging (history in My Links)',
+            default: true
         }
     ]
 };
@@ -180,7 +186,8 @@ async function saltPassword(username, password) {
     const params = `username_or_email=${encodeURIComponent(username)}`;
     const resp = await needle('post', 'https://webshare.cz/api/salt/', params, { headers });
     const salt = resp.body.children.find(el => el.name == 'salt').value;
-    return sha1(md5.cryptMD5(password, salt));
+    const md5Hash = CryptoJS.MD5(password + salt).toString();
+    return sha1(md5Hash);
 }
 
 async function login(username, saltedPassword) {
@@ -1978,10 +1985,12 @@ async function handleCatalogRequest(args) {
         
         console.log(`Returning ${metas.length} metas`);
         
-        // Zalogovat vyhledávání do R2 (async, nečekáme na to)
-        logSearch(username, searchQuery, metas.length).catch(err => {
-            console.error('R2 logging failed:', err.message);
-        });
+        // Zalogovat vyhledávání do R2 (pouze pokud má uživatel povoleno)
+        if (args.config?.enable_logging !== false) {
+            logSearch(username, searchQuery, metas.length).catch(err => {
+                console.error('R2 logging failed:', err.message);
+            });
+        }
         
         return { metas };
         
@@ -2246,6 +2255,13 @@ app.get('/', (req, res) => {
             </label>
         </div>
         
+        <div class="form-group">
+            <label style="display: flex; align-items: center; cursor: pointer;">
+                <input type="checkbox" id="enable_logging" name="enable_logging" checked style="width: auto; margin-right: 10px;">
+                <span>Enable Search Logging (history in My Links)</span>
+            </label>
+        </div>
+        
         <button type="submit" class="install-btn">
             🔗 Vygenerovat instalační link
         </button>
@@ -2328,6 +2344,7 @@ app.get('/', (req, res) => {
             const password = document.getElementById('password').value.trim();
             const tmdb = document.getElementById('tmdb').value.trim();
             const enableDirectSearch = document.getElementById('enable_direct_search').checked;
+            const enableLogging = document.getElementById('enable_logging').checked;
             
             if (!username || !password) {
                 alert('⚠️ Username a password jsou povinné!');
@@ -2339,7 +2356,8 @@ app.get('/', (req, res) => {
                 username: username,
                 password: password,
                 tmdb_api_key: tmdb || '',
-                enable_direct_search: enableDirectSearch
+                enable_direct_search: enableDirectSearch,
+                enable_logging: enableLogging
             };
             
             // Base64 encode config pro personal URL
@@ -2636,6 +2654,48 @@ app.get('/mylinks', async (req, res) => {
     <script>
         let currentUser = '';
         
+        // Cookie helpers
+        function setCookie(name, value, days) {
+            const expires = new Date();
+            expires.setTime(expires.getTime() + days * 24 * 60 * 60 * 1000);
+            document.cookie = name + '=' + encodeURIComponent(value) + ';expires=' + expires.toUTCString() + ';path=/';
+        }
+        
+        function getCookie(name) {
+            const nameEQ = name + '=';
+            const ca = document.cookie.split(';');
+            for(let i = 0; i < ca.length; i++) {
+                let c = ca[i];
+                while (c.charAt(0) === ' ') c = c.substring(1, c.length);
+                if (c.indexOf(nameEQ) === 0) return decodeURIComponent(c.substring(nameEQ.length, c.length));
+            }
+            return null;
+        }
+        
+        // Auto-fill ze cookies při načtení stránky
+        window.onload = function() {
+            const savedUsername = getCookie('ws_username');
+            const savedPassword = getCookie('ws_password');
+            
+            if (savedUsername) {
+                document.getElementById('username').value = savedUsername;
+            }
+            if (savedPassword) {
+                document.getElementById('password').value = savedPassword;
+            }
+            
+            // Auto-login pokud máme credentials
+            if (savedUsername && savedPassword) {
+                // Počkat chvíli než se stránka načte
+                setTimeout(() => {
+                    const autoLogin = confirm('Máte uložené přihlašovací údaje. Přihlásit automaticky?');
+                    if (autoLogin) {
+                        login();
+                    }
+                }, 500);
+            }
+        };
+        
         async function login() {
             const username = document.getElementById('username').value.trim();
             const password = document.getElementById('password').value.trim();
@@ -2658,6 +2718,10 @@ app.get('/mylinks', async (req, res) => {
                     showError(data.error);
                     return;
                 }
+                
+                // Uložit do cookies (platnost 30 dní)
+                setCookie('ws_username', username, 30);
+                setCookie('ws_password', password, 30);
                 
                 currentUser = username;
                 showHistory(data.searches);
