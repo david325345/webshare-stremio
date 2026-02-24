@@ -258,7 +258,7 @@ async function restoreBackup(backupData, restoredBy) {
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '7.10.0', // Add poster images from OMDB/Kitsu in My Links history
+    version: '7.11.0', // Use TMDB API key from config for real posters, fallback to gradient icons
     name: 'Webshare Anime',
     description: 'Anime a filmy z Webshare.cz s vyhledáváním',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -1280,9 +1280,25 @@ async function handleStreamRequest(args) {
                     if (fileInfo) {
                         const link = await getFileLink(manual.webshare_ident, token);
                         if (link) {
+                            // Extrahovat kvalitu z názvu souboru
+                            const quality = detectQuality(fileInfo.name);
+                            const qualityStr = quality.resolution || 'SD';
+                            const sizeStr = formatSize(fileInfo.size);
+                            
+                            // Detekce jazyka
+                            const nameUpper = fileInfo.name.toUpperCase();
+                            const languages = [];
+                            if (nameUpper.includes('CZ') || nameUpper.includes('CZECH')) languages.push('🇨🇿 CZ');
+                            if (nameUpper.includes('SK') || nameUpper.includes('SLOVAK')) languages.push('🇸🇰 SK');
+                            if (nameUpper.includes('EN') || nameUpper.includes('ENGLISH')) languages.push('🇬🇧 EN');
+                            
+                            // Název streamu - VLEVO se zobrazí název filmu/epizody
+                            const streamName = `Webshare.cz
+${languages.join('+')} 📺 ${qualityStr} 💾${sizeStr}`;
+                            
                             manualLinkStream = {
-                                name: `📌 ${manual.display_name || fileInfo.name}`,
-                                title: `Manuální link (${manual.added_by})`,
+                                name: streamName,
+                                title: `📌 Manuální link`, // Vpravo - bez jména uploadera
                                 url: link,
                                 behaviorHints: {
                                     bingeGroup: 'webshare-manual',
@@ -2774,13 +2790,16 @@ app.get('/:userConfig/meta/:type/:id.json', async (req, res) => {
 app.get('/mylinks', async (req, res) => {
     // Získat config z URL nebo username/password (pro zpětnou kompatibilitu)
     let username = req.query.username || '';
+    let tmdbApiKey = '';
     
     if (req.query.config) {
         try {
             const configJson = Buffer.from(req.query.config, 'base64').toString('utf8');
             const config = JSON.parse(configJson);
             username = config.username || '';
+            tmdbApiKey = config.tmdb_api_key || '';
             console.log('My Links - parsed username:', username);
+            console.log('My Links - TMDB API key:', tmdbApiKey ? 'present' : 'missing');
         } catch (error) {
             console.error('Failed to parse config:', error.message);
         }
@@ -2915,6 +2934,8 @@ app.get('/mylinks', async (req, res) => {
     <script>
         console.log('My Links JS loaded');
         let currentUser = '${username}';
+        const tmdbApiKey = '${tmdbApiKey}';
+        console.log('TMDB API key available:', !!tmdbApiKey);
         console.log('Current user:', currentUser);
         
         // Auto-load historie pokud máme username z configu
@@ -3091,34 +3112,66 @@ app.get('/mylinks', async (req, res) => {
                 const manual = manualLinks[query];
                 const hasManualLink = !!manual;
                 
-                // Extrahovat ID pro poster
-                let posterUrl = null;
+                // Extrahovat ID a typ pro ikonu/poster
+                let posterHtml = '';
                 let title = query;
                 
-                // IMDB/TMDB
+                // IMDB/TMDB - načíst poster přes TMDB API
                 const ttMatch = query.match(/tt(\d+)/);
-                if (ttMatch) {
+                if (ttMatch && tmdbApiKey) {
                     const imdbId = 'tt' + ttMatch[1];
-                    posterUrl = \`https://img.omdbapi.com/?i=\${imdbId}&h=300&apikey=7c212775\`;
-                    title = query.replace(/^tt\d+:\s*/, ''); // Odstranit tt prefix
-                }
-                
-                // Kitsu
-                const kitsuMatch = query.match(/kitsu:(\d+)/);
-                if (kitsuMatch) {
-                    const kitsuId = kitsuMatch[1];
-                    posterUrl = \`https://media.kitsu.io/anime/poster_images/\${kitsuId}/medium.jpg\`;
+                    title = query.replace(/^tt\d+:\s*/, '');
+                    // TMDB poster - načteme asynchronně
+                    posterHtml = \`
+                        <div id="poster_\${encodeURIComponent(query)}" style="width: 60px; height: 90px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 32px; flex-shrink: 0;">
+                            🎬
+                        </div>
+                        <script>
+                            (async () => {
+                                try {
+                                    const resp = await fetch(\\\`https://api.themoviedb.org/3/find/\${imdbId}?api_key=\${tmdbApiKey}&external_source=imdb_id\\\`);
+                                    const data = await resp.json();
+                                    const movie = data.movie_results?.[0] || data.tv_results?.[0];
+                                    if (movie?.poster_path) {
+                                        const img = document.createElement('img');
+                                        img.src = \\\`https://image.tmdb.org/t/p/w185\${movie.poster_path}\\\`;
+                                        img.style = 'width: 60px; height: 90px; object-fit: cover; border-radius: 8px;';
+                                        img.onerror = () => img.style.display = 'none';
+                                        document.getElementById('poster_\${encodeURIComponent(query)}').innerHTML = '';
+                                        document.getElementById('poster_\${encodeURIComponent(query)}').appendChild(img);
+                                    }
+                                } catch (e) { console.error('Poster load failed:', e); }
+                            })();
+                        </script>
+                    \`;
+                } else if (ttMatch) {
+                    // Bez API klíče - jen ikona
+                    title = query.replace(/^tt\d+:\s*/, '');
+                    posterHtml = \`
+                        <div style="width: 60px; height: 90px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 32px; flex-shrink: 0;">
+                            🎬
+                        </div>
+                    \`;
+                } else if (query.includes('kitsu:')) {
+                    // Kitsu anime - ikona
                     title = query.replace(/^kitsu:\d+:\s*/, '');
+                    posterHtml = \`
+                        <div style="width: 60px; height: 90px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 32px; flex-shrink: 0;">
+                            🌸
+                        </div>
+                    \`;
+                } else {
+                    // Default ikona
+                    posterHtml = \`
+                        <div style="width: 60px; height: 90px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 32px; flex-shrink: 0;">
+                            🎬
+                        </div>
+                    \`;
                 }
                 
                 return \`
-                <div class="search-item" style="display: flex; gap: 15px;">
-                    \${posterUrl ? \`
-                        <img src="\${posterUrl}" 
-                             alt="Poster" 
-                             style="width: 80px; height: 120px; object-fit: cover; border-radius: 5px; flex-shrink: 0;"
-                             onerror="this.style.display='none'">
-                    \` : ''}
+                <div class="search-item" style="display: flex; gap: 15px; align-items: start;">
+                    \${posterHtml}
                     <div style="flex: 1;">
                         <div class="search-query">\${title}</div>
                         <div class="search-stats">
