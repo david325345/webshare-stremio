@@ -107,7 +107,7 @@ async function addManualLink(query, webshareIdent, addedBy, fileName) {
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '7.0.2', // Fix: Template string syntax error in R2 calls
+    version: '7.0.3', // Add JSON body parser + auto-login to My Links from install form
     name: 'Webshare Anime',
     description: 'Anime a filmy z Webshare.cz s vyhledáváním',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -2129,6 +2129,10 @@ console.log('✅ Keep-alive scheduler initialized');
 // ========== EXPRESS SERVER ==========
 const app = express();
 
+// JSON body parser - MUSÍ BÝT PŘED routes!
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
 // CORS middleware
 app.use((req, res, next) => {
     // Log pouze API requesty, ne statické soubory
@@ -2283,9 +2287,12 @@ app.get('/', (req, res) => {
                 <button onclick="copyInstallLink()" style="padding: 10px 20px; background: #00d9ff; color: #1a1a2e; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; margin-right: 10px;">
                     📋 Zkopírovat
                 </button>
-                <button onclick="installNow()" style="padding: 10px 20px; background: #7b2cbf; color: white; border: none; border-radius: 5px; cursor: pointer; font-weight: bold;">
+                <button onclick="installNow()" style="padding: 10px 20px; background: #7b2cbf; color: white; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; margin-right: 10px;">
                     🚀 Nainstalovat
                 </button>
+                <a id="myLinksBtn" href="/mylinks" target="_blank" style="display: none; padding: 10px 20px; background: #9d4edd; color: white; border-radius: 5px; text-decoration: none; font-weight: bold;">
+                    🔗 My Links
+                </a>
             </div>
         </div>
         <div class="note" style="margin-top: 10px; background: #2d1b00; border-left-color: #ff9500;">
@@ -2370,6 +2377,14 @@ app.get('/', (req, res) => {
             // Zobrazíme link
             document.getElementById('installLinkDisplay').textContent = installUrl;
             document.getElementById('installLinkContainer').style.display = 'block';
+            
+            // Vytvoříme My Links URL s credentials
+            const myLinksUrl = \`/mylinks?username=\${encodeURIComponent(username)}&password=\${encodeURIComponent(password)}\`;
+            const myLinksBtn = document.getElementById('myLinksBtn');
+            if (myLinksBtn) {
+                myLinksBtn.href = myLinksUrl;
+                myLinksBtn.style.display = 'inline-block';
+            }
             
             // Scrollujeme k linku
             document.getElementById('installLinkContainer').scrollIntoView({ behavior: 'smooth' });
@@ -2546,6 +2561,10 @@ app.get('/:userConfig/meta/:type/:id.json', async (req, res) => {
 
 // ========== MY LINKS - Web rozhraní pro správu manuálních linků ==========
 app.get('/mylinks', async (req, res) => {
+    // Pokud jsou credentials v query (?username=...&password=...), auto-login
+    const autoUsername = req.query.username || '';
+    const autoPassword = req.query.password || '';
+    
     res.send(`
 <!DOCTYPE html>
 <html>
@@ -2653,6 +2672,13 @@ app.get('/mylinks', async (req, res) => {
     
     <script>
         let currentUser = '';
+        const autoUsername = '${autoUsername}';
+        const autoPassword = '${autoPassword}';
+        
+        // Auto-login pokud jsou credentials v URL
+        if (autoUsername && autoPassword) {
+            setTimeout(() => loginWithCredentials(autoUsername, autoPassword), 100);
+        }
         
         // Cookie helpers
         function setCookie(name, value, days) {
