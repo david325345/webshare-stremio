@@ -186,7 +186,7 @@ async function addManualLink(query, webshareIdent, addedBy, displayName, poster)
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '7.6.2', // Debug: Add extensive logging to diagnose My Links loading issue
+    version: '7.7.0', // MAJOR: Manual links show FIRST in streams, fixed JS syntax
     name: 'Webshare Anime',
     description: 'Anime a filmy z Webshare.cz s vyhledáváním',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -1189,6 +1189,43 @@ async function handleStreamRequest(args) {
         }
 
         console.log('Search queries:', searchQueries);
+        
+        // ========== CHECK PRO MANUÁLNÍ LINKY ==========
+        // Zkontrolovat jestli existuje manuální link pro tento query
+        let manualLinkStream = null;
+        if (searchQueries.length > 0) {
+            const manualLinks = await getManualLinks();
+            const queryKey = `${args.id.split(':')[0]}: ${searchQueries[0]}`;
+            console.log('Checking manual link for:', queryKey);
+            
+            if (manualLinks[queryKey]) {
+                const manual = manualLinks[queryKey];
+                console.log('Found manual link:', manual);
+                
+                try {
+                    // Získat info a link pro manuální soubor
+                    const fileInfo = await getFileInfo(manual.webshare_ident, token);
+                    if (fileInfo) {
+                        const link = await getFileLink(manual.webshare_ident, token);
+                        if (link) {
+                            manualLinkStream = {
+                                name: `📌 ${manual.display_name || fileInfo.name}`,
+                                title: `Manuální link (${manual.added_by})`,
+                                url: link,
+                                behaviorHints: {
+                                    bingeGroup: 'webshare-manual',
+                                    videoSize: fileInfo.size,
+                                    filename: fileInfo.name
+                                }
+                            };
+                            console.log('Manual link stream created');
+                        }
+                    }
+                } catch (error) {
+                    console.error('Failed to load manual link:', error.message);
+                }
+            }
+        }
 
         // Vyhledáme pomocí všech variant názvů
         const allResults = await Promise.all(
@@ -1941,6 +1978,12 @@ async function handleStreamRequest(args) {
         
         const allStreams = await Promise.all(streamPromises);
         const validStreams = allStreams.filter(s => s !== null);
+        
+        // Přidat manuální link stream NA ZAČÁTEK pokud existuje
+        if (manualLinkStream) {
+            validStreams.unshift(manualLinkStream);
+            console.log('Manual link stream added to beginning');
+        }
         
         console.log(`Returning ${validStreams.length} streams to Stremio`);
         
