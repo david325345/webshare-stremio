@@ -101,6 +101,13 @@ const r2Client = new S3Client({
 const R2_BUCKET = process.env.R2_BUCKET_NAME || 'titulky-cache';
 const R2_PREFIX = 'webshare-addon/';
 
+// Admin uživatelé - mají právo mazat všechny linky
+const ADMIN_USERS = ['Procha'];
+
+function isAdmin(username) {
+    return ADMIN_USERS.includes(username);
+}
+
 // R2 Helper Functions
 async function getFromR2(key) {
     try {
@@ -184,9 +191,74 @@ async function addManualLink(query, webshareIdent, addedBy, displayName, poster)
     }
 }
 
+async function deleteManualLink(query, requestingUser) {
+    try {
+        const manualLinks = await getManualLinks();
+        
+        if (!manualLinks[query]) {
+            return { success: false, error: 'Link neexistuje' };
+        }
+        
+        const link = manualLinks[query];
+        
+        // Check permissions
+        if (!isAdmin(requestingUser) && link.added_by !== requestingUser) {
+            return { success: false, error: 'Nemáte oprávnění smazat tento link' };
+        }
+        
+        delete manualLinks[query];
+        await putToR2('manual-links.json', manualLinks);
+        console.log(`✅ Manual link deleted: "${query}" by ${requestingUser}`);
+        return { success: true };
+    } catch (error) {
+        console.error('Failed to delete manual link:', error.message);
+        return { success: false, error: 'Server error' };
+    }
+}
+
+async function createBackup() {
+    try {
+        const manualLinks = await getManualLinks();
+        
+        // Získat všechny user searches
+        const userSearches = {};
+        // Note: V produkci bychom museli listovat všechny user-searches/* soubory
+        // Pro jednoduchost vrátíme jen manual-links
+        
+        const backup = {
+            timestamp: new Date().toISOString(),
+            version: '7.8.0',
+            manual_links: manualLinks,
+            // user_searches: userSearches // TODO: implementovat listing všech uživatelů
+        };
+        
+        return backup;
+    } catch (error) {
+        console.error('Failed to create backup:', error.message);
+        return null;
+    }
+}
+
+async function restoreBackup(backupData, restoredBy) {
+    try {
+        if (!backupData.manual_links) {
+            return { success: false, error: 'Invalid backup format' };
+        }
+        
+        // Restore manual links
+        await putToR2('manual-links.json', backupData.manual_links);
+        
+        console.log(`✅ Backup restored by ${restoredBy}`);
+        return { success: true, restored: Object.keys(backupData.manual_links).length };
+    } catch (error) {
+        console.error('Failed to restore backup:', error.message);
+        return { success: false, error: 'Server error' };
+    }
+}
+
 const manifest = {
     id: 'com.webshare.anime',
-    version: '7.7.0', // MAJOR: Manual links show FIRST in streams, fixed JS syntax
+    version: '7.10.0', // Add poster images from OMDB/Kitsu in My Links history
     name: 'Webshare Anime',
     description: 'Anime a filmy z Webshare.cz s vyhledáváním',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -2815,6 +2887,22 @@ app.get('/mylinks', async (req, res) => {
         <p id="loginError" class="error hidden"></p>
     </div>
     
+    ${username === 'Procha' ? `
+    <div style="background: #2d1b00; border: 2px solid #ff9500; border-radius: 10px; padding: 20px; margin: 20px 0;">
+        <h2 style="color: #ff9500; margin-top: 0;">👑 Admin Panel</h2>
+        <div style="display: flex; gap: 10px; margin-top: 15px;">
+            <button onclick="downloadBackup()" style="flex: 1; padding: 12px; background: #00d9ff; color: #1a1a2e; border: none; border-radius: 5px; cursor: pointer; font-weight: bold;">
+                💾 Stáhnout zálohu
+            </button>
+            <label style="flex: 1; padding: 12px; background: #7b2cbf; color: white; border-radius: 5px; cursor: pointer; font-weight: bold; text-align: center; display: block;">
+                📤 Nahrát zálohu
+                <input type="file" id="restoreFile" accept=".json" style="display: none;" onchange="restoreBackup(this)">
+            </label>
+        </div>
+        <p id="adminMessage" style="margin-top: 10px; display: none;"></p>
+    </div>
+    ` : ''}
+    
     <div id="historySection" class="${username ? '' : 'hidden'}">
         <div id="loadingMsg" style="text-align: center; padding: 20px; ${username ? '' : 'display: none;'}">
             <p style="color: #00d9ff; font-size: 18px;">⏳ Načítám vaši historii vyhledávání...</p>
@@ -3003,25 +3091,59 @@ app.get('/mylinks', async (req, res) => {
                 const manual = manualLinks[query];
                 const hasManualLink = !!manual;
                 
+                // Extrahovat ID pro poster
+                let posterUrl = null;
+                let title = query;
+                
+                // IMDB/TMDB
+                const ttMatch = query.match(/tt(\d+)/);
+                if (ttMatch) {
+                    const imdbId = 'tt' + ttMatch[1];
+                    posterUrl = \`https://img.omdbapi.com/?i=\${imdbId}&h=300&apikey=7c212775\`;
+                    title = query.replace(/^tt\d+:\s*/, ''); // Odstranit tt prefix
+                }
+                
+                // Kitsu
+                const kitsuMatch = query.match(/kitsu:(\d+)/);
+                if (kitsuMatch) {
+                    const kitsuId = kitsuMatch[1];
+                    posterUrl = \`https://media.kitsu.io/anime/poster_images/\${kitsuId}/medium.jpg\`;
+                    title = query.replace(/^kitsu:\d+:\s*/, '');
+                }
+                
                 return \`
-                <div class="search-item">
-                    <div class="search-query">\${query}</div>
-                    <div class="search-stats">
-                        🔍 Hledáno: \${stats.count}x | 
-                        📦 Nalezeno: \${stats.results_count} souborů |
-                        🕒 Naposledy: \${new Date(stats.last_search).toLocaleString('cs-CZ')}
-                    </div>
-                    \${hasManualLink ? \`
-                        <div style="background: #0d1b2a; padding: 10px; margin-top: 10px; border-radius: 5px;">
-                            <strong style="color: #00d9ff;">📌 Manuální link:</strong> \${manual.display_name}<br>
-                            <small style="color: #999;">Přidal: \${manual.added_by} • \${new Date(manual.added_at).toLocaleDateString('cs-CZ')}</small>
-                        </div>
+                <div class="search-item" style="display: flex; gap: 15px;">
+                    \${posterUrl ? \`
+                        <img src="\${posterUrl}" 
+                             alt="Poster" 
+                             style="width: 80px; height: 120px; object-fit: cover; border-radius: 5px; flex-shrink: 0;"
+                             onerror="this.style.display='none'">
                     \` : ''}
-                    <div class="add-link-form">
-                        <input type="text" id="name_\${encodeURIComponent(query)}" placeholder="Název (např. 'Frieren EP1 CZ 1080p')" style="width: 100%; margin-bottom: 5px; padding: 8px; box-sizing: border-box;">
-                        <input type="text" id="link_\${encodeURIComponent(query)}" placeholder="Webshare URL nebo ident" style="width: 70%; display: inline-block; padding: 8px;">
-                        <button onclick="addLink('\${query.replace(/'/g, "\\\\'")}', '\${encodeURIComponent(query)}')" style="width: 28%; display: inline-block; padding: 8px;">Přidat</button>
-                        <p id="msg_\${encodeURIComponent(query)}" class="hidden"></p>
+                    <div style="flex: 1;">
+                        <div class="search-query">\${title}</div>
+                        <div class="search-stats">
+                            🔍 Hledáno: \${stats.count}x | 
+                            📦 Nalezeno: \${stats.results_count} souborů |
+                            🕒 Naposledy: \${new Date(stats.last_search).toLocaleString('cs-CZ')}
+                        </div>
+                        \${hasManualLink ? \`
+                            <div style="background: #0d1b2a; padding: 10px; margin-top: 10px; border-radius: 5px; position: relative;">
+                                <strong style="color: #00d9ff;">📌 Manuální link:</strong> \${manual.display_name}<br>
+                                <small style="color: #999;">Přidal: \${manual.added_by} • \${new Date(manual.added_at).toLocaleDateString('cs-CZ')}</small>
+                                \${(currentUser === manual.added_by || '${username}' === 'Procha') ? \`
+                                    <button onclick="deleteLink('\${query.replace(/'/g, "\\\\'")}', '\${encodeURIComponent(query)}')" 
+                                            style="position: absolute; top: 10px; right: 10px; padding: 5px 10px; background: #ff4444; color: white; border: none; border-radius: 3px; cursor: pointer; font-size: 12px;">
+                                        🗑️ Smazat
+                                    </button>
+                                \` : ''}
+                            </div>
+                        \` : ''}
+                        <div class="add-link-form">
+                            <input type="text" id="name_\${encodeURIComponent(query)}" placeholder="Název (např. 'Frieren EP1 CZ 1080p')" style="width: 100%; margin-bottom: 5px; padding: 8px; box-sizing: border-box;">
+                            <input type="text" id="link_\${encodeURIComponent(query)}" placeholder="Webshare URL nebo ident" style="width: 70%; display: inline-block; padding: 8px;">
+                            <button onclick="addLink('\${query.replace(/'/g, "\\\\'")}', '\${encodeURIComponent(query)}')" style="width: 28%; display: inline-block; padding: 8px;">Přidat</button>
+                            <p id="msg_\${encodeURIComponent(query)}" class="hidden"></p>
+                        </div>
                     </div>
                 </div>
             \`;
@@ -3068,6 +3190,113 @@ app.get('/mylinks', async (req, res) => {
                 
             } catch (error) {
                 showMessage(encodedQuery, '❌ Chyba: ' + error.message, 'error');
+            }
+        }
+        
+        async function deleteLink(query, encodedQuery) {
+            if (!confirm('Opravdu chcete smazat tento manuální link?')) {
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/mylinks/delete', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 
+                        username: currentUser,
+                        query: query
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    showMessage(encodedQuery, '✅ Link smazán. Obnovte stránku pro aktualizaci.', 'success');
+                    // Refresh po 1 sekundě
+                    setTimeout(() => location.reload(), 1000);
+                } else {
+                    showMessage(encodedQuery, '❌ ' + (data.error || 'Chyba'), 'error');
+                }
+                
+            } catch (error) {
+                showMessage(encodedQuery, '❌ Chyba: ' + error.message, 'error');
+            }
+        }
+        
+        // Admin funkce - stáhnout zálohu
+        async function downloadBackup() {
+            try {
+                const response = await fetch('/api/mylinks/backup', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username: currentUser })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success && data.backup) {
+                    // Vytvořit JSON soubor a stáhnout
+                    const blob = new Blob([JSON.stringify(data.backup, null, 2)], { type: 'application/json' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = \`webshare-addon-backup-\${new Date().toISOString().split('T')[0]}.json\`;
+                    a.click();
+                    URL.revokeObjectURL(url);
+                    
+                    showAdminMessage('✅ Záloha stažena', 'success');
+                } else {
+                    showAdminMessage('❌ ' + (data.error || 'Chyba'), 'error');
+                }
+            } catch (error) {
+                showAdminMessage('❌ Chyba: ' + error.message, 'error');
+            }
+        }
+        
+        // Admin funkce - nahrát zálohu
+        async function restoreBackup(input) {
+            const file = input.files[0];
+            if (!file) return;
+            
+            if (!confirm('VAROVÁNÍ: Tato akce přepíše všechny manuální linky! Pokračovat?')) {
+                input.value = '';
+                return;
+            }
+            
+            try {
+                const text = await file.text();
+                const backup = JSON.parse(text);
+                
+                const response = await fetch('/api/mylinks/restore', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 
+                        username: currentUser,
+                        backup: backup
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    showAdminMessage(\`✅ Záloha obnovena (\${data.restored} linků). Obnovte stránku.\`, 'success');
+                    setTimeout(() => location.reload(), 2000);
+                } else {
+                    showAdminMessage('❌ ' + (data.error || 'Chyba'), 'error');
+                }
+            } catch (error) {
+                showAdminMessage('❌ Chyba: ' + error.message, 'error');
+            }
+            
+            input.value = '';
+        }
+        
+        function showAdminMessage(msg, type) {
+            const msgEl = document.getElementById('adminMessage');
+            if (msgEl) {
+                msgEl.textContent = msg;
+                msgEl.style.display = 'block';
+                msgEl.style.color = type === 'success' ? '#00ff00' : '#ff0000';
             }
         }
         
@@ -3137,6 +3366,65 @@ app.post('/api/mylinks/add', async (req, res) => {
         
     } catch (error) {
         console.error('Add link API error:', error);
+        res.json({ error: 'Server error', success: false });
+    }
+});
+
+// API endpoint - smazat manuální link
+app.post('/api/mylinks/delete', async (req, res) => {
+    try {
+        const { username, query } = req.body;
+        
+        if (!username || !query) {
+            return res.json({ error: 'Missing data', success: false });
+        }
+        
+        const result = await deleteManualLink(query, username);
+        res.json(result);
+        
+    } catch (error) {
+        console.error('Delete link API error:', error);
+        res.json({ error: 'Server error', success: false });
+    }
+});
+
+// API endpoint - stáhnout zálohu (pouze admin)
+app.post('/api/mylinks/backup', async (req, res) => {
+    try {
+        const { username } = req.body;
+        
+        if (!isAdmin(username)) {
+            return res.json({ error: 'Admin only', success: false });
+        }
+        
+        const backup = await createBackup();
+        
+        if (!backup) {
+            return res.json({ error: 'Failed to create backup', success: false });
+        }
+        
+        res.json({ success: true, backup });
+        
+    } catch (error) {
+        console.error('Backup API error:', error);
+        res.json({ error: 'Server error', success: false });
+    }
+});
+
+// API endpoint - nahrát zálohu (pouze admin)
+app.post('/api/mylinks/restore', async (req, res) => {
+    try {
+        const { username, backup } = req.body;
+        
+        if (!isAdmin(username)) {
+            return res.json({ error: 'Admin only', success: false });
+        }
+        
+        const result = await restoreBackup(backup, username);
+        res.json(result);
+        
+    } catch (error) {
+        console.error('Restore API error:', error);
         res.json({ error: 'Server error', success: false });
     }
 });
