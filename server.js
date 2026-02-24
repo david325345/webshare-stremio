@@ -273,7 +273,7 @@ async function restoreBackup(backupData, restoredBy) {
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '7.12.0', // Add Cinemeta API for real posters in My Links history
+    version: '7.12.1', // Display custom name from My Links instead of "Manuální link"
     name: 'Webshare Anime',
     description: 'Anime a filmy z Webshare.cz s vyhledáváním',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -1313,7 +1313,7 @@ ${languages.join('+')} 📺 ${qualityStr} 💾${sizeStr}`;
                             
                             manualLinkStream = {
                                 name: streamName,
-                                title: `📌 Manuální link`, // Vpravo - bez jména uploadera
+                                title: `📌 ${manual.display_name || fileInfo.name || 'Manuální link'}`, // Fallback pro starý formát
                                 url: link,
                                 behaviorHints: {
                                     bingeGroup: 'webshare-manual',
@@ -1321,7 +1321,7 @@ ${languages.join('+')} 📺 ${qualityStr} 💾${sizeStr}`;
                                     filename: fileInfo.name
                                 }
                             };
-                            console.log('Manual link stream created');
+                            console.log('Manual link stream created with title:', manual.display_name || fileInfo.name);
                         }
                     }
                 } catch (error) {
