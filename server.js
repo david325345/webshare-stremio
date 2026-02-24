@@ -186,7 +186,7 @@ async function addManualLink(query, webshareIdent, addedBy, displayName, poster)
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '7.6.1', // Fix: Auto-generate install link, better error handling for My Links loading
+    version: '7.6.2', // Debug: Add extensive logging to diagnose My Links loading issue
     name: 'Webshare Anime',
     description: 'Anime a filmy z Webshare.cz s vyhledáváním',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -2665,10 +2665,13 @@ app.get('/mylinks', async (req, res) => {
             const configJson = Buffer.from(req.query.config, 'base64').toString('utf8');
             const config = JSON.parse(configJson);
             username = config.username || '';
+            console.log('My Links - parsed username:', username);
         } catch (error) {
             console.error('Failed to parse config:', error.message);
         }
     }
+    
+    console.log('My Links - rendering for username:', username);
     
     res.send(`
 <!DOCTYPE html>
@@ -2779,22 +2782,31 @@ app.get('/mylinks', async (req, res) => {
     </div>
     
     <script>
+        console.log('My Links JS loaded');
         let currentUser = '${username}';
+        console.log('Current user:', currentUser);
         
         // Auto-load historie pokud máme username z configu
         if (currentUser) {
+            console.log('Auto-loading history for:', currentUser);
             setTimeout(() => loadHistory(currentUser), 100);
+        } else {
+            console.log('No username - skipping auto-load');
         }
         
         async function loadHistory(username) {
+            console.log('loadHistory called for:', username);
             try {
+                console.log('Fetching history from API...');
                 const response = await fetch('/api/mylinks/history', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ username })
                 });
                 
+                console.log('API response status:', response.status);
                 const data = await response.json();
+                console.log('API response data:', data);
                 
                 if (data.error) {
                     console.error('Error loading history:', data.error);
