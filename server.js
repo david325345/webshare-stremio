@@ -1,6 +1,6 @@
 const { addonBuilder, getRouter } = require('stremio-addon-sdk');
 const needle = require('needle');
-const crypto = require('crypto');
+const md5crypt = require('apache-md5');
 const sha1 = require('sha1');
 const xml2js = require('xml2js');
 const { S3Client, GetObjectCommand, PutObjectCommand } = require('@aws-sdk/client-s3');
@@ -107,7 +107,7 @@ async function addManualLink(query, webshareIdent, addedBy, fileName) {
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '7.1.2', // Add debug logging to saltPassword and login
+    version: '7.2.0', // CRITICAL FIX: Use apache-md5 (correct MD5-crypt algorithm for Webshare)
     name: 'Webshare Anime',
     description: 'Anime a filmy z Webshare.cz s vyhledáváním',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -187,18 +187,9 @@ async function saltPassword(username, password) {
     const resp = await needle('post', 'https://webshare.cz/api/salt/', params, { headers });
     const salt = resp.body.children.find(el => el.name == 'salt').value;
     
-    console.log('Salt received:', salt);
-    
-    // Webshare používá PHP-style MD5 crypt: md5(md5(password) . salt)
-    const passwordMd5 = crypto.createHash('md5').update(password).digest('hex');
-    const salted = crypto.createHash('md5').update(passwordMd5 + salt).digest('hex');
-    const final = sha1(salted);
-    
-    console.log('Password MD5:', passwordMd5.substring(0, 10) + '...');
-    console.log('Salted MD5:', salted.substring(0, 10) + '...');
-    console.log('Final SHA1:', final.substring(0, 10) + '...');
-    
-    return final;
+    // Webshare používá Apache MD5-crypt algoritmus
+    const crypted = md5crypt(password, salt);
+    return sha1(crypted);
 }
 
 async function login(username, saltedPassword) {
@@ -206,12 +197,7 @@ async function login(username, saltedPassword) {
     const params = `username_or_email=${encodeURIComponent(username)}&password=${encodeURIComponent(saltedPassword)}&keep_logged_in=1`;
     const resp = await needle('post', 'https://webshare.cz/api/login/', params, { headers });
     
-    console.log('Login response status:', resp.statusCode);
-    console.log('Login response body:', JSON.stringify(resp.body, null, 2).substring(0, 500));
-    
     if (resp.statusCode != 200 || resp.body.children.find(el => el.name == 'status').value != 'OK') {
-        const statusEl = resp.body.children.find(el => el.name == 'status');
-        console.log('Login failed - status:', statusEl ? statusEl.value : 'not found');
         throw new Error('Cannot log in to Webshare.cz');
     }
     
