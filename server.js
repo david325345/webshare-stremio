@@ -186,7 +186,7 @@ async function addManualLink(query, webshareIdent, addedBy, displayName, poster)
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '7.6.0', // MAJOR: Enhanced My Links - display name, show who added, manual links display
+    version: '7.6.1', // Fix: Auto-generate install link, better error handling for My Links loading
     name: 'Webshare Anime',
     description: 'Anime a filmy z Webshare.cz s vyhledáváním',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -2377,18 +2377,31 @@ app.get('/', (req, res) => {
     
     <script>
         // Auto-fill z localStorage pokud existuje
+        let autoGenerate = false;
         try {
             const saved = localStorage.getItem('webshare_config');
             if (saved) {
                 const config = JSON.parse(saved);
-                if (config.username) document.getElementById('username').value = config.username;
-                if (config.password) document.getElementById('password').value = config.password;
+                if (config.username) {
+                    document.getElementById('username').value = config.username;
+                    autoGenerate = true;
+                }
+                if (config.password) {
+                    document.getElementById('password').value = config.password;
+                }
                 if (config.tmdb_api_key) document.getElementById('tmdb').value = config.tmdb_api_key;
                 if (config.enable_direct_search !== undefined) {
                     document.getElementById('enable_direct_search').checked = config.enable_direct_search;
                 }
                 if (config.enable_my_links !== undefined) {
                     document.getElementById('enable_my_links').checked = config.enable_my_links;
+                }
+                
+                // Auto-generate install link po načtení stránky
+                if (autoGenerate) {
+                    setTimeout(() => {
+                        document.getElementById('installForm').dispatchEvent(new Event('submit'));
+                    }, 100);
                 }
             }
         } catch (e) {
@@ -2786,6 +2799,8 @@ app.get('/mylinks', async (req, res) => {
                 if (data.error) {
                     console.error('Error loading history:', data.error);
                     document.getElementById('historySection').classList.remove('hidden');
+                    const loadingMsg = document.getElementById('loadingMsg');
+                    if (loadingMsg) loadingMsg.style.display = 'none';
                     document.getElementById('searchHistory').innerHTML = '<p>Chyba načítání historie.</p>';
                 } else if (data.searches && Object.keys(data.searches).length > 0) {
                     showHistory(data.searches);
@@ -2797,6 +2812,10 @@ app.get('/mylinks', async (req, res) => {
                 }
             } catch (error) {
                 console.error('Failed to load history:', error);
+                document.getElementById('historySection').classList.remove('hidden');
+                const loadingMsg = document.getElementById('loadingMsg');
+                if (loadingMsg) loadingMsg.style.display = 'none';
+                document.getElementById('searchHistory').innerHTML = '<p>❌ Chyba připojení k serveru.</p>';
             }
         }
         
