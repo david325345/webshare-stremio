@@ -258,7 +258,7 @@ async function restoreBackup(backupData, restoredBy) {
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '7.11.1', // Fix: Correct template string escaping in poster loading
+    version: '7.11.2', // Simplify: Back to gradient icons, TMDB API causes template string issues
     name: 'Webshare Anime',
     description: 'Anime a filmy z Webshare.cz s vyhledáváním',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -3112,66 +3112,27 @@ app.get('/mylinks', async (req, res) => {
                 const manual = manualLinks[query];
                 const hasManualLink = !!manual;
                 
-                // Extrahovat ID a typ pro ikonu/poster
-                let posterHtml = '';
+                // Extrahovat ID a typ pro ikonu
+                let icon = '🎬';
                 let title = query;
                 
-                // IMDB/TMDB - načíst poster přes TMDB API
-                const ttMatch = query.match(/tt(\d+)/);
-                if (ttMatch && tmdbApiKey) {
-                    const imdbId = 'tt' + ttMatch[1];
-                    title = query.replace(/^tt\d+:\s*/, '');
-                    // TMDB poster - načteme asynchronně
-                    posterHtml = \`
-                        <div id="poster_\${encodeURIComponent(query)}" style="width: 60px; height: 90px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 32px; flex-shrink: 0;">
-                            🎬
-                        </div>
-                        <script>
-                            (async () => {
-                                try {
-                                    const resp = await fetch('https://api.themoviedb.org/3/find/\${imdbId}?api_key=\${tmdbApiKey}&external_source=imdb_id');
-                                    const data = await resp.json();
-                                    const movie = data.movie_results?.[0] || data.tv_results?.[0];
-                                    if (movie?.poster_path) {
-                                        const img = document.createElement('img');
-                                        img.src = 'https://image.tmdb.org/t/p/w185' + movie.poster_path;
-                                        img.style = 'width: 60px; height: 90px; object-fit: cover; border-radius: 8px;';
-                                        img.onerror = () => img.style.display = 'none';
-                                        document.getElementById('poster_\${encodeURIComponent(query)}').innerHTML = '';
-                                        document.getElementById('poster_\${encodeURIComponent(query)}').appendChild(img);
-                                    }
-                                } catch (e) { console.error('Poster load failed:', e); }
-                            })();
-                        </script>
-                    \`;
-                } else if (ttMatch) {
-                    // Bez API klíče - jen ikona
-                    title = query.replace(/^tt\d+:\s*/, '');
-                    posterHtml = \`
-                        <div style="width: 60px; height: 90px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 32px; flex-shrink: 0;">
-                            🎬
-                        </div>
-                    \`;
-                } else if (query.includes('kitsu:')) {
-                    // Kitsu anime - ikona
-                    title = query.replace(/^kitsu:\d+:\s*/, '');
-                    posterHtml = \`
-                        <div style="width: 60px; height: 90px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 32px; flex-shrink: 0;">
-                            🌸
-                        </div>
-                    \`;
-                } else {
-                    // Default ikona
-                    posterHtml = \`
-                        <div style="width: 60px; height: 90px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 32px; flex-shrink: 0;">
-                            🎬
-                        </div>
-                    \`;
+                // IMDB/TMDB
+                if (query.match(/tt\d+/)) {
+                    icon = '🎬';
+                    title = query.replace(/^tt\\d+:\\s*/, '');
+                }
+                
+                // Kitsu (anime)
+                if (query.includes('kitsu:')) {
+                    icon = '🌸';
+                    title = query.replace(/^kitsu:\\d+:\\s*/, '');
                 }
                 
                 return \`
                 <div class="search-item" style="display: flex; gap: 15px; align-items: start;">
-                    \${posterHtml}
+                    <div style="width: 60px; height: 90px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 32px; flex-shrink: 0;">
+                        \${icon}
+                    </div>
                     <div style="flex: 1;">
                         <div class="search-query">\${title}</div>
                         <div class="search-stats">
