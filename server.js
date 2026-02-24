@@ -185,7 +185,7 @@ async function addManualLink(query, webshareIdent, addedBy, fileName) {
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '7.3.0', // CRITICAL: Custom MD5-crypt implementation (no external package needed)
+    version: '7.3.1', // Add My Links button to homepage
     name: 'Webshare Anime',
     description: 'Anime a filmy z Webshare.cz s vyhledáváním',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -2306,6 +2306,15 @@ app.get('/', (req, res) => {
             🔗 Vygenerovat instalační link
         </button>
     </form>
+    
+    <div style="margin-top: 20px; text-align: center;">
+        <a href="/mylinks" style="display: inline-block; padding: 12px 24px; background: #9d4edd; color: white; text-decoration: none; border-radius: 5px; font-weight: bold;">
+            🔗 My Links - Správa manuálních linků
+        </a>
+        <p style="color: #999; font-size: 14px; margin-top: 10px;">
+            Přihlaste se svými Webshare údaji a spravujte manuální linky pro vyhledávání
+        </p>
+    </div>
     
     <div id="installLinkContainer" style="display: none; margin-top: 20px;">
         <div class="note">
