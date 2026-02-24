@@ -258,7 +258,7 @@ async function restoreBackup(backupData, restoredBy) {
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '7.11.0', // Use TMDB API key from config for real posters, fallback to gradient icons
+    version: '7.11.1', // Fix: Correct template string escaping in poster loading
     name: 'Webshare Anime',
     description: 'Anime a filmy z Webshare.cz s vyhledáváním',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -3129,12 +3129,12 @@ app.get('/mylinks', async (req, res) => {
                         <script>
                             (async () => {
                                 try {
-                                    const resp = await fetch(\\\`https://api.themoviedb.org/3/find/\${imdbId}?api_key=\${tmdbApiKey}&external_source=imdb_id\\\`);
+                                    const resp = await fetch('https://api.themoviedb.org/3/find/\${imdbId}?api_key=\${tmdbApiKey}&external_source=imdb_id');
                                     const data = await resp.json();
                                     const movie = data.movie_results?.[0] || data.tv_results?.[0];
                                     if (movie?.poster_path) {
                                         const img = document.createElement('img');
-                                        img.src = \\\`https://image.tmdb.org/t/p/w185\${movie.poster_path}\\\`;
+                                        img.src = 'https://image.tmdb.org/t/p/w185' + movie.poster_path;
                                         img.style = 'width: 60px; height: 90px; object-fit: cover; border-radius: 8px;';
                                         img.onerror = () => img.style.display = 'none';
                                         document.getElementById('poster_\${encodeURIComponent(query)}').innerHTML = '';
