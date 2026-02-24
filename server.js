@@ -165,14 +165,15 @@ async function getManualLinks() {
     return await getFromR2('manual-links.json') || {};
 }
 
-async function addManualLink(query, webshareIdent, addedBy, fileName) {
+async function addManualLink(query, webshareIdent, addedBy, displayName, poster) {
     try {
         const manualLinks = await getManualLinks();
         manualLinks[query] = {
             webshare_ident: webshareIdent,
             added_by: addedBy,
             added_at: new Date().toISOString(),
-            file_name: fileName
+            display_name: displayName || query,
+            poster: poster || null
         };
         await putToR2('manual-links.json', manualLinks);
         console.log(`✅ Manual link added: "${query}" → ${webshareIdent}`);
@@ -185,7 +186,7 @@ async function addManualLink(query, webshareIdent, addedBy, fileName) {
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '7.4.0', // MAJOR: My Links without login, max 10 results, show after manifest generation
+    version: '7.6.0', // MAJOR: Enhanced My Links - display name, show who added, manual links display
     name: 'Webshare Anime',
     description: 'Anime a filmy z Webshare.cz s vyhledáváním',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -2375,6 +2376,25 @@ app.get('/', (req, res) => {
     </p>
     
     <script>
+        // Auto-fill z localStorage pokud existuje
+        try {
+            const saved = localStorage.getItem('webshare_config');
+            if (saved) {
+                const config = JSON.parse(saved);
+                if (config.username) document.getElementById('username').value = config.username;
+                if (config.password) document.getElementById('password').value = config.password;
+                if (config.tmdb_api_key) document.getElementById('tmdb').value = config.tmdb_api_key;
+                if (config.enable_direct_search !== undefined) {
+                    document.getElementById('enable_direct_search').checked = config.enable_direct_search;
+                }
+                if (config.enable_my_links !== undefined) {
+                    document.getElementById('enable_my_links').checked = config.enable_my_links;
+                }
+            }
+        } catch (e) {
+            console.error('Failed to load saved config:', e);
+        }
+        
         const form = document.getElementById('installForm');
         let currentInstallUrl = '';
         
@@ -2419,6 +2439,13 @@ app.get('/', (req, res) => {
                 enable_direct_search: enableDirectSearch,
                 enable_my_links: enableMyLinks
             };
+            
+            // Uložit do localStorage pro příště
+            try {
+                localStorage.setItem('webshare_config', JSON.stringify(config));
+            } catch (e) {
+                console.error('Failed to save config:', e);
+            }
             
             // Base64 encode config pro personal URL
             const configB64 = btoa(JSON.stringify(config));
@@ -2873,16 +2900,36 @@ app.get('/mylinks', async (req, res) => {
             const historyDiv = document.getElementById('searchHistory');
             
             if (!searches || Object.keys(searches).length === 0) {
-                historyDiv.innerHTML = '<p>Zatím jste nic nehledali.</p>';
+                historyDiv.innerHTML = '<p>Zatím jste nic nehledali přes addon.</p>';
                 return;
             }
+            
+            // Načíst manuální linky
+            fetch('/api/mylinks/manual')
+                .then(r => r.json())
+                .then(data => {
+                    const manualLinks = data.links || {};
+                    renderHistory(searches, manualLinks);
+                })
+                .catch(err => {
+                    console.error('Failed to load manual links:', err);
+                    renderHistory(searches, {});
+                });
+        }
+        
+        function renderHistory(searches, manualLinks) {
+            const historyDiv = document.getElementById('searchHistory');
             
             // Seřadit podle posledního vyhledávání a vzít max 10
             const sorted = Object.entries(searches)
                 .sort((a, b) => new Date(b[1].last_search) - new Date(a[1].last_search))
                 .slice(0, 10);
             
-            historyDiv.innerHTML = sorted.map(([query, stats]) => \`
+            historyDiv.innerHTML = sorted.map(([query, stats]) => {
+                const manual = manualLinks[query];
+                const hasManualLink = !!manual;
+                
+                return \`
                 <div class="search-item">
                     <div class="search-query">\${query}</div>
                     <div class="search-stats">
@@ -2890,21 +2937,35 @@ app.get('/mylinks', async (req, res) => {
                         📦 Nalezeno: \${stats.results_count} souborů |
                         🕒 Naposledy: \${new Date(stats.last_search).toLocaleString('cs-CZ')}
                     </div>
+                    \${hasManualLink ? \`
+                        <div style="background: #0d1b2a; padding: 10px; margin-top: 10px; border-radius: 5px;">
+                            <strong style="color: #00d9ff;">📌 Manuální link:</strong> \${manual.display_name}<br>
+                            <small style="color: #999;">Přidal: \${manual.added_by} • \${new Date(manual.added_at).toLocaleDateString('cs-CZ')}</small>
+                        </div>
+                    \` : ''}
                     <div class="add-link-form">
-                        <input type="text" id="link_\${encodeURIComponent(query)}" placeholder="Webshare ident (např. ABC123) nebo URL" style="width: 70%; display: inline-block;">
-                        <button onclick="addLink('\${query.replace(/'/g, "\\\\'")}')">Přidat link</button>
+                        <input type="text" id="name_\${encodeURIComponent(query)}" placeholder="Název (např. 'Frieren EP1 CZ 1080p')" style="width: 100%; margin-bottom: 5px; padding: 8px; box-sizing: border-box;">
+                        <input type="text" id="link_\${encodeURIComponent(query)}" placeholder="Webshare URL nebo ident" style="width: 70%; display: inline-block; padding: 8px;">
+                        <button onclick="addLink('\${query.replace(/'/g, "\\\\'")}', '\${encodeURIComponent(query)}')" style="width: 28%; display: inline-block; padding: 8px;">Přidat</button>
                         <p id="msg_\${encodeURIComponent(query)}" class="hidden"></p>
                     </div>
                 </div>
             \`).join('');
         }
         
-        async function addLink(query) {
-            const linkInput = document.getElementById('link_' + encodeURIComponent(query));
+        async function addLink(query, encodedQuery) {
+            const nameInput = document.getElementById('name_' + encodedQuery);
+            const linkInput = document.getElementById('link_' + encodedQuery);
+            const name = nameInput.value.trim();
             const link = linkInput.value.trim();
             
             if (!link) {
-                showMessage(query, 'Zadejte Webshare ident nebo URL!', 'error');
+                showMessage(encodedQuery, 'Zadejte Webshare ident nebo URL!', 'error');
+                return;
+            }
+            
+            if (!name) {
+                showMessage(encodedQuery, 'Zadejte název pro link!', 'error');
                 return;
             }
             
@@ -2915,26 +2976,28 @@ app.get('/mylinks', async (req, res) => {
                     body: JSON.stringify({ 
                         username: currentUser,
                         query: query,
-                        link: link
+                        link: link,
+                        display_name: name
                     })
                 });
                 
                 const data = await response.json();
                 
                 if (data.success) {
-                    showMessage(query, '✅ Link přidán! Všichni uživatelé ho teď uvidí.', 'success');
+                    showMessage(encodedQuery, '✅ Link přidán! Všichni uživatelé ho teď uvidí.', 'success');
                     linkInput.value = '';
+                    nameInput.value = '';
                 } else {
-                    showMessage(query, '❌ ' + data.error, 'error');
+                    showMessage(encodedQuery, '❌ ' + data.error, 'error');
                 }
                 
             } catch (error) {
-                showMessage(query, '❌ Chyba: ' + error.message, 'error');
+                showMessage(encodedQuery, '❌ Chyba: ' + error.message, 'error');
             }
         }
         
-        function showMessage(query, msg, type) {
-            const msgEl = document.getElementById('msg_' + encodeURIComponent(query));
+        function showMessage(encodedQuery, msg, type) {
+            const msgEl = document.getElementById('msg_' + encodedQuery);
             msgEl.textContent = msg;
             msgEl.className = type;
         }
@@ -2967,9 +3030,9 @@ app.post('/api/mylinks/history', async (req, res) => {
 // API endpoint - přidat manuální link
 app.post('/api/mylinks/add', async (req, res) => {
     try {
-        const { username, query, link } = req.body;
+        const { username, query, link, display_name } = req.body;
         
-        if (!username || !query || !link) {
+        if (!username || !query || !link || !display_name) {
             return res.json({ error: 'Missing data', success: false });
         }
         
@@ -2982,14 +3045,35 @@ app.post('/api/mylinks/add', async (req, res) => {
             }
         }
         
+        // Zkusit získat poster z query (pokud obsahuje tt/kitsu)
+        let poster = null;
+        if (query.includes('tt')) {
+            // TMDB/IMDB
+            const ttMatch = query.match(/tt(\d+)/);
+            if (ttMatch) {
+                poster = `https://img.omdbapi.com/?i=tt${ttMatch[1]}&apikey=placeholder`;
+            }
+        }
+        
         // Přidat link
-        const success = await addManualLink(query, ident, username, 'N/A');
+        const success = await addManualLink(query, ident, username, display_name, poster);
         
         res.json({ success });
         
     } catch (error) {
         console.error('Add link API error:', error);
         res.json({ error: 'Server error', success: false });
+    }
+});
+
+// API endpoint - získat všechny manuální linky
+app.get('/api/mylinks/manual', async (req, res) => {
+    try {
+        const links = await getManualLinks();
+        res.json({ links });
+    } catch (error) {
+        console.error('Manual links API error:', error);
+        res.json({ links: {}, error: 'Server error' });
     }
 });
 
