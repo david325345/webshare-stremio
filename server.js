@@ -369,7 +369,7 @@ async function restoreBackup(backupData, restoredBy) {
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '7.16.5', // Fix: Create scriptVars string separately to inject into template
+    version: '7.16.6', // Fix: Use placeholder replacement instead of template string interpolation
     name: 'Webshare Anime',
     description: 'Anime a filmy z Webshare.cz s vyhledáváním',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -2951,15 +2951,8 @@ app.get('/mylinks', async (req, res) => {
     
     console.log('My Links - rendering for username:', username);
     
-    // Prepare JavaScript values
-    const scriptVars = `
-        let currentUser = ${JSON.stringify(username)};
-        let currentPassword = ${JSON.stringify(password)};
-        let currentIsAdmin = ${username === 'Procha'};
-        const tmdbApiKey = ${JSON.stringify(tmdbApiKey)};
-    `;
-    
-    res.send(`
+    // Build the HTML page
+    let htmlPage = `
 <!DOCTYPE html>
 <html>
 <head>
@@ -3135,7 +3128,10 @@ app.get('/mylinks', async (req, res) => {
     
     <script>
         console.log('My Links JS loaded');
-        ${scriptVars}
+        let currentUser = __USERNAME__;
+        let currentPassword = __PASSWORD__;
+        let currentIsAdmin = __IS_ADMIN__;
+        const tmdbApiKey = __TMDB_KEY__;
         console.log('TMDB API key available:', !!tmdbApiKey);
         console.log('Current user:', currentUser);
         console.log('Is admin:', currentIsAdmin);
@@ -3701,7 +3697,16 @@ app.get('/mylinks', async (req, res) => {
     </script>
 </body>
 </html>
-    `);
+    `;
+    
+    // Replace placeholders with actual values
+    htmlPage = htmlPage
+        .replace('__USERNAME__', JSON.stringify(username))
+        .replace('__PASSWORD__', JSON.stringify(password))
+        .replace('__IS_ADMIN__', username === 'Procha')
+        .replace('__TMDB_KEY__', JSON.stringify(tmdbApiKey));
+    
+    res.send(htmlPage);
 });
 
 // API endpoint - získat historii vyhledávání uživatele (BEZ ověření hesla)
