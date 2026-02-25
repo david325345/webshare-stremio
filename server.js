@@ -292,7 +292,7 @@ async function restoreBackup(backupData, restoredBy) {
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '7.13.4', // Debug: Add logging to getFileLink to see why links fail
+    version: '7.14.0', // MAJOR: Validate manual links before adding - check if file exists and is downloadable
     name: 'Webshare Anime',
     description: 'Anime a filmy z Webshare.cz s vyhledáváním',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -2853,6 +2853,7 @@ app.get('/:userConfig/meta/:type/:id.json', async (req, res) => {
 app.get('/mylinks', async (req, res) => {
     // Získat config z URL nebo username/password (pro zpětnou kompatibilitu)
     let username = req.query.username || '';
+    let password = '';
     let tmdbApiKey = '';
     
     if (req.query.config) {
@@ -2860,6 +2861,7 @@ app.get('/mylinks', async (req, res) => {
             const configJson = Buffer.from(req.query.config, 'base64').toString('utf8');
             const config = JSON.parse(configJson);
             username = config.username || '';
+            password = config.password || '';
             tmdbApiKey = config.tmdb_api_key || '';
             console.log('My Links - parsed username:', username);
             console.log('My Links - TMDB API key:', tmdbApiKey ? 'present' : 'missing');
@@ -2997,6 +2999,7 @@ app.get('/mylinks', async (req, res) => {
     <script>
         console.log('My Links JS loaded');
         let currentUser = '${username}';
+        let currentPassword = '${password}';
         const tmdbApiKey = '${tmdbApiKey}';
         console.log('TMDB API key available:', !!tmdbApiKey);
         console.log('Current user:', currentUser);
@@ -3249,11 +3252,14 @@ app.get('/mylinks', async (req, res) => {
             }
             
             try {
+                showMessage(encodedQuery, '⏳ Kontroluji link...', 'info');
+                
                 const response = await fetch('/api/mylinks/add', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ 
                         username: currentUser,
+                        password: currentPassword,
                         query: query,
                         link: link,
                         display_name: name
@@ -3417,7 +3423,7 @@ app.post('/api/mylinks/history', async (req, res) => {
 // API endpoint - přidat manuální link
 app.post('/api/mylinks/add', async (req, res) => {
     try {
-        const { username, query, link, display_name } = req.body;
+        const { username, password, query, link, display_name } = req.body;
         
         if (!username || !query || !link || !display_name) {
             return res.json({ error: 'Missing data', success: false });
@@ -3432,10 +3438,52 @@ app.post('/api/mylinks/add', async (req, res) => {
             }
         }
         
+        // Validace formátu
+        if (!/^[a-zA-Z0-9]+$/.test(ident)) {
+            return res.json({ 
+                error: 'Neplatný formát Webshare identu', 
+                success: false 
+            });
+        }
+        
+        // VALIDACE: Zkontrolovat jestli soubor existuje
+        if (password) {
+            try {
+                console.log(`Validating link ${ident} for user ${username}...`);
+                const saltedPassword = await saltPassword(username, password);
+                const token = await login(username, saltedPassword);
+                
+                // Zkusit získat file info
+                const fileInfo = await getFileInfo(ident, token);
+                if (!fileInfo) {
+                    return res.json({ 
+                        error: '❌ Soubor nenalezen na Webshare (možná byl smazán)', 
+                        success: false 
+                    });
+                }
+                
+                // Zkusit získat link
+                const fileLink = await getFileLink(ident, token);
+                if (!fileLink) {
+                    return res.json({ 
+                        error: '❌ Soubor nelze stáhnout (zkontroluj kredity/přístup)', 
+                        success: false 
+                    });
+                }
+                
+                console.log(`✅ Link validated: ${fileInfo.name}`);
+            } catch (validationError) {
+                console.error('Validation failed:', validationError.message);
+                return res.json({ 
+                    error: '❌ Validace selhala: ' + validationError.message, 
+                    success: false 
+                });
+            }
+        }
+        
         // Zkusit získat poster z query (pokud obsahuje tt/kitsu)
         let poster = null;
         if (query.includes('tt')) {
-            // TMDB/IMDB
             const ttMatch = query.match(/tt(\d+)/);
             if (ttMatch) {
                 poster = `https://img.omdbapi.com/?i=tt${ttMatch[1]}&apikey=placeholder`;
