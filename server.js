@@ -3198,6 +3198,8 @@ app.get('/mylinks', async (req, res) => {
         var selectedImdbId = null;
         var selectedType = null;
         var selectedTitleName = null;
+        var selectedEnName = null;
+        var selectedIsJapanese = false;
         var selectedPosterUrl = null;
         var searchTimeout = null;
         var allMyCustomLinks = [];
@@ -3351,11 +3353,12 @@ app.get('/mylinks', async (req, res) => {
                 resultsDiv.innerHTML = data.results.map(function(item, idx) {
                     var posterSrc = item.poster || 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="40" height="60" fill="%23444"><rect width="40" height="60"/><text x="12" y="35" fill="%23999" font-size="14">?</text></svg>');
                     var typeLabel = item.type === 'movie' ? '\\uD83C\\uDFAC Film' : '\\uD83D\\uDCFA Seriál';
-                    var origName = item.original_name ? ' <span style="color:#666;">(' + item.original_name + ')</span>' : '';
+                    if (item.is_japanese) typeLabel = '\\uD83C\\uDDEF\\uD83C\\uDDF5 Anime';
+                    var subName = item.en_name ? ' <span style="color:#888;">(' + item.en_name + ')</span>' : (item.original_name ? ' <span style="color:#666;">(' + item.original_name + ')</span>' : '');
                     return '<div onclick="selectTitle(' + idx + ')" style="display:flex;gap:10px;align-items:center;padding:10px;margin:4px 0;background:#0d1b2a;border-radius:6px;cursor:pointer;border:1px solid transparent;transition:border-color 0.2s;" onmouseover="this.style.borderColor=\\'#9d4edd\\'" onmouseout="this.style.borderColor=\\'transparent\\'">' +
                         '<img src="' + posterSrc + '" style="width:40px;height:60px;object-fit:cover;border-radius:4px;flex-shrink:0;" onerror="this.style.display=\\'none\\'">' +
                         '<div style="flex:1;min-width:0;">' +
-                            '<div style="color:#eee;font-weight:bold;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + item.name + origName + '</div>' +
+                            '<div style="color:#eee;font-weight:bold;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + item.name + subName + '</div>' +
                             '<div style="color:#999;font-size:12px;">' + typeLabel + ' &bull; ' + (item.year || '?') + ' &bull; <span style="color:#00d9ff;">' + item.imdb_id + '</span></div>' +
                         '</div>' +
                     '</div>';
@@ -3376,6 +3379,8 @@ app.get('/mylinks', async (req, res) => {
             selectedImdbId = item.imdb_id;
             selectedType = item.type;
             selectedTitleName = item.name;
+            selectedEnName = item.en_name || null;
+            selectedIsJapanese = item.is_japanese || false;
             selectedPosterUrl = item.poster;
 
             // Vyplnit selected panel
@@ -3383,9 +3388,12 @@ app.get('/mylinks', async (req, res) => {
             if (item.poster) { posterEl.src = item.poster; posterEl.style.display = 'block'; }
             else { posterEl.style.display = 'none'; }
 
-            document.getElementById('selectedName').textContent = item.name;
+            var nameText = item.name;
+            if (item.en_name) nameText += ' / ' + item.en_name;
+            document.getElementById('selectedName').textContent = nameText;
             var typeLabel = item.type === 'movie' ? 'Film' : 'Seriál';
-            document.getElementById('selectedMeta').textContent = typeLabel + ' \\u2022 ' + (item.year || '?');
+            var jpLabel = item.is_japanese ? ' \\u2022 \\uD83C\\uDDEF\\uD83C\\uDDF5 Anime' : '';
+            document.getElementById('selectedMeta').textContent = typeLabel + ' \\u2022 ' + (item.year || '?') + jpLabel;
             document.getElementById('selectedImdb').textContent = item.imdb_id;
 
             // Zobrazit/skrýt epizodu pole
@@ -3408,6 +3416,8 @@ app.get('/mylinks', async (req, res) => {
             selectedImdbId = null;
             selectedType = null;
             selectedTitleName = null;
+            selectedEnName = null;
+            selectedIsJapanese = false;
             selectedPosterUrl = null;
             document.getElementById('selectedTitle').style.display = 'none';
             document.getElementById('titleResults').style.display = 'none';
@@ -3440,14 +3450,27 @@ app.get('/mylinks', async (req, res) => {
             if (!displayName) { showCustomMsg('Zadej popis linku!', 'error'); return; }
             if (!webshareLink) { showCustomMsg('Zadej Webshare link nebo ident!', 'error'); return; }
 
-            // Sestavit query klíč ve formátu, který addon používá
-            var queryKey = selectedImdbId + ': ' + selectedTitleName;
+            // Vybrat správný název - pro anime (japonský obsah) používá addon anglický název
+            var rawName = selectedTitleName;
+            if (selectedIsJapanese && selectedEnName) {
+                rawName = selectedEnName;
+            }
 
+            // Vyčistit název STEJNĚ jako addon:
+            // 1. Normalizace diakritiky (NFD + remove combining marks)
+            // 2. Lomítka na mezery
+            // 3. Odstranit !?:*
+            var cleanName = rawName.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\//g, ' ').replace(/[!?:*]/g, '').replace(/\s+/g, ' ').trim();
+
+            // Sestavit query klíč ve formátu, který addon používá
+            var queryKey;
             if (selectedType === 'series') {
                 var season = parseInt(document.getElementById('customSeason').value) || 1;
                 var episode = parseInt(document.getElementById('customEpisode').value) || 1;
                 var seasonEp = 'S' + String(season).padStart(2, '0') + 'E' + String(episode).padStart(2, '0');
-                queryKey = selectedImdbId + ': ' + selectedTitleName + ' ' + seasonEp;
+                queryKey = selectedImdbId + ': ' + cleanName + ' ' + seasonEp;
+            } else {
+                queryKey = selectedImdbId + ': ' + cleanName;
             }
 
             showCustomMsg('Kontroluji a ukládám link...', 'info');
@@ -3971,11 +3994,12 @@ app.post('/api/search-titles', async (req, res) => {
                         if (item.media_type !== 'movie' && item.media_type !== 'tv') continue;
                         
                         const type = item.media_type === 'movie' ? 'movie' : 'series';
-                        const name = item.title || item.name || '';
+                        const czName = item.title || item.name || '';
                         const originalName = item.original_title || item.original_name || '';
                         const year = (item.release_date || item.first_air_date || '').substring(0, 4);
                         const poster = item.poster_path ? `https://image.tmdb.org/t/p/w200${item.poster_path}` : null;
                         const tmdbId = item.id;
+                        const isJapanese = item.original_language === 'ja';
                         
                         // Potřebujeme IMDB ID - další dotaz na TMDB
                         let imdbId = null;
@@ -3993,13 +4017,29 @@ app.post('/api/search-titles', async (req, res) => {
                         
                         if (!imdbId) continue; // Bez IMDB ID nemůžeme propojit s addonem
                         
+                        // Získat anglický název (druhý dotaz s language=en-US)
+                        let enName = czName; // fallback
+                        try {
+                            const enEndpoint = type === 'movie'
+                                ? `https://api.themoviedb.org/3/movie/${tmdbId}?api_key=${tmdb_api_key}&language=en-US`
+                                : `https://api.themoviedb.org/3/tv/${tmdbId}?api_key=${tmdb_api_key}&language=en-US`;
+                            const enResp = await needle('get', enEndpoint, { timeout: 3000 });
+                            if (enResp.body) {
+                                enName = enResp.body.title || enResp.body.name || czName;
+                            }
+                        } catch (e) {
+                            console.log('Failed to get EN name for TMDB', tmdbId);
+                        }
+                        
                         results.push({
                             imdb_id: imdbId,
-                            name: name,
-                            original_name: originalName !== name ? originalName : null,
+                            name: czName,
+                            en_name: enName !== czName ? enName : null,
+                            original_name: (originalName !== czName && originalName !== enName) ? originalName : null,
                             year: year,
                             type: type,
-                            poster: poster
+                            poster: poster,
+                            is_japanese: isJapanese
                         });
                     }
                 }
