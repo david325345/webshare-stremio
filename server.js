@@ -369,7 +369,7 @@ async function restoreBackup(backupData, restoredBy) {
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '7.17.2', // Debug: Print full script tag to find syntax error
+    version: '7.17.3', // Debug: Print more of script tag (10000 chars)
     name: 'Webshare Anime',
     description: 'Anime a filmy z Webshare.cz s vyhledáváním',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -3779,8 +3779,10 @@ app.get('/mylinks', async (req, res) => {
     if (scriptStart > -1) {
         const scriptEnd = htmlPage.indexOf('</script>', scriptStart);
         const scriptContent = htmlPage.substring(scriptStart, scriptEnd + 9);
-        console.log('=== GENERATED SCRIPT TAG (first 2000 chars) ===');
-        console.log(scriptContent.substring(0, 2000));
+        console.log('=== GENERATED SCRIPT TAG (first 5000 chars) ===');
+        console.log(scriptContent.substring(0, 5000));
+        console.log('=== MIDDLE PART (chars 5000-10000) ===');
+        console.log(scriptContent.substring(5000, 10000));
         console.log('=== END SCRIPT TAG ===');
     }
     
