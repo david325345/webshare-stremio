@@ -369,7 +369,7 @@ async function restoreBackup(backupData, restoredBy) {
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '7.16.10', // Debug: Check for unreplaced placeholders, use global regex replace
+    version: '7.16.11', // Debug: Add alert to test if JavaScript executes
     name: 'Webshare Anime',
     description: 'Anime a filmy z Webshare.cz s vyhledáváním',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -3127,6 +3127,7 @@ app.get('/mylinks', async (req, res) => {
     </div>
     
     <script>
+        alert('JavaScript START - pokud vidíš toto, JS funguje!');
         console.log('My Links JS loaded');
         let currentUser = __USERNAME__;
         let currentPassword = __PASSWORD__;
@@ -3135,6 +3136,13 @@ app.get('/mylinks', async (req, res) => {
         console.log('TMDB API key available:', !!tmdbApiKey);
         console.log('Current user:', currentUser);
         console.log('Is admin:', currentIsAdmin);
+        
+        // DEBUG: Test if JS is running
+        if (!currentUser) {
+            alert('ERROR: currentUser is empty! Value: ' + currentUser);
+        } else {
+            console.log('✅ currentUser is set:', currentUser);
+        }
         
         // Auto-load historie pokud máme username z configu
         if (currentUser) {
