@@ -292,7 +292,7 @@ async function restoreBackup(backupData, restoredBy) {
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '7.13.3', // Debug: Add extensive logging to diagnose why manual links fail to load
+    version: '7.13.4', // Debug: Add logging to getFileLink to see why links fail
     name: 'Webshare Anime',
     description: 'Anime a filmy z Webshare.cz s vyhledáváním',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -437,6 +437,10 @@ async function getFileLink(ident, token) {
     if (status == 'OK') {
         return resp.body.children.find(el => el.name == 'link').value;
     }
+    
+    // Debug logging pro failed requests
+    const errorMsg = resp?.body?.children?.find(el => el.name == 'message')?.value;
+    console.log(`getFileLink failed for ${ident}: status=${status}, error=${errorMsg}`);
     return null;
 }
 
