@@ -3460,7 +3460,7 @@ app.get('/mylinks', async (req, res) => {
             // 1. Normalizace diakritiky (NFD + remove combining marks)
             // 2. Lomítka na mezery
             // 3. Odstranit !?:*
-            var cleanName = rawName.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\//g, ' ').replace(/[!?:*]/g, '').replace(/\s+/g, ' ').trim();
+            var cleanName = rawName.normalize('NFD').replace(new RegExp('[\\u0300-\\u036f]', 'g'), '').replace(new RegExp('/', 'g'), ' ').replace(new RegExp('[!?:*]', 'g'), '').replace(new RegExp('\\s+', 'g'), ' ').trim();
 
             // Sestavit query klíč ve formátu, který addon používá
             var queryKey;
@@ -3665,11 +3665,11 @@ app.get('/mylinks', async (req, res) => {
                 var title = query;
                 var posterUrl = stats.poster || 'https://via.placeholder.com/60x90/667eea/ffffff?text=?';
 
-                if (query.match(/tt\\\\d+/)) {
-                    title = query.replace(/^tt\\\\d+:\\\\s*/, '');
+                if (query.match(/tt\\d+/)) {
+                    title = query.replace(/^tt\\d+:\\s*/, '');
                 }
                 if (query.includes('kitsu:')) {
-                    title = query.replace(/^kitsu:\\\\d+:\\\\s*/, '');
+                    title = query.replace(/^kitsu:\\d+:\\s*/, '');
                 }
 
                 var manualLinksHtml = '';
