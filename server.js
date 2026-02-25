@@ -3005,7 +3005,7 @@ app.get('/mylinks', async (req, res) => {
         * { box-sizing: border-box; }
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            max-width: 900px;
+            max-width: 1300px;
             margin: 30px auto;
             padding: 20px;
             background: #1a1a2e;
@@ -3013,6 +3013,27 @@ app.get('/mylinks', async (req, res) => {
         }
         h1 { color: #00d9ff; }
         h2 { color: #9d4edd; margin-top: 30px; }
+        .page-layout {
+            display: flex;
+            gap: 20px;
+            align-items: flex-start;
+        }
+        .main-col {
+            flex: 1;
+            min-width: 0;
+        }
+        .side-col {
+            width: 340px;
+            flex-shrink: 0;
+            position: sticky;
+            top: 20px;
+            max-height: calc(100vh - 40px);
+            overflow-y: auto;
+        }
+        @media (max-width: 900px) {
+            .page-layout { flex-direction: column; }
+            .side-col { width: 100%; position: static; max-height: none; }
+        }
         .login-form {
             background: #16213e;
             padding: 20px;
@@ -3095,7 +3116,9 @@ app.get('/mylinks', async (req, res) => {
 
     ${adminPanelHTML}
 
-    <div id="customLinkSection" style="display: ${username ? 'block' : 'none'}; background: #16213e; border: 2px solid #9d4edd; border-radius: 10px; padding: 20px; margin: 20px 0;">
+    <div class="page-layout" style="display: ${username ? 'flex' : 'none'};" id="pageLayout">
+        <div class="main-col">
+            <div id="customLinkSection" style="background: #16213e; border: 2px solid #9d4edd; border-radius: 10px; padding: 20px; margin: 0 0 20px 0;">
         <h2 style="color: #9d4edd; margin-top: 0;">&#x2795; Přidat custom link</h2>
         <p style="color: #999; font-size: 14px; margin-bottom: 15px;">Vyhledej film nebo seriál, vyber ho a přidej Webshare link.</p>
         
@@ -3152,6 +3175,18 @@ app.get('/mylinks', async (req, res) => {
         <p style="display: none;" id="histDesc">Zde vidíte co jste hledali a můžete přidat manuální linky.</p>
         <div id="searchHistory"></div>
     </div>
+        </div>
+
+        <div class="side-col">
+            <div style="background: #16213e; border: 2px solid #00d9ff; border-radius: 10px; padding: 15px;">
+                <h3 style="color: #00d9ff; margin: 0 0 12px 0; font-size: 16px;">&#x1F4DD; Moje přidané linky <span id="myCustomLinksCount" style="color: #666; font-size: 13px; font-weight: normal;"></span></h3>
+                <div id="myCustomLinks" style="color: #999; font-size: 13px;">Načítám...</div>
+                <div id="myCustomLinksMore" style="display: none; text-align: center; margin-top: 10px;">
+                    <button onclick="showMoreCustomLinks()" style="padding: 8px 16px; background: #00d9ff; color: #1a1a2e; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; font-size: 13px; margin-top: 0;">Zobrazit dalších 10</button>
+                </div>
+            </div>
+        </div>
+    </div>
 
     <script>
         var currentUser = ${JSON.stringify(username || '')};
@@ -3165,6 +3200,125 @@ app.get('/mylinks', async (req, res) => {
         var selectedTitleName = null;
         var selectedPosterUrl = null;
         var searchTimeout = null;
+        var allMyCustomLinks = [];
+        var customLinksShown = 0;
+        var CUSTOM_LINKS_PAGE = 10;
+
+        // Auto-load sidebar custom links
+        if (currentUser) {
+            setTimeout(function() { loadMyCustomLinks(); }, 200);
+        }
+
+        async function loadMyCustomLinks() {
+            try {
+                var response = await fetch('/api/mylinks/manual');
+                var data = await response.json();
+                var links = data.links || {};
+
+                allMyCustomLinks = [];
+                for (var query in links) {
+                    if (Array.isArray(links[query])) {
+                        links[query].forEach(function(link, idx) {
+                            if (link.added_by === currentUser) {
+                                allMyCustomLinks.push({
+                                    query: query,
+                                    idx: idx,
+                                    display_name: link.display_name,
+                                    added_at: link.added_at,
+                                    status: link.status,
+                                    poster: link.poster || null,
+                                    webshare_ident: link.webshare_ident
+                                });
+                            }
+                        });
+                    }
+                }
+
+                // Seřadit podle data přidání (nejnovější první)
+                allMyCustomLinks.sort(function(a, b) {
+                    return new Date(b.added_at) - new Date(a.added_at);
+                });
+
+                customLinksShown = 0;
+                renderMyCustomLinks(false);
+            } catch (error) {
+                document.getElementById('myCustomLinks').innerHTML = '<p style="color:#ff4444;">Chyba načítání</p>';
+            }
+        }
+
+        function renderMyCustomLinks(append) {
+            var container = document.getElementById('myCustomLinks');
+            var moreBtn = document.getElementById('myCustomLinksMore');
+            var countEl = document.getElementById('myCustomLinksCount');
+
+            if (countEl) countEl.textContent = '(' + allMyCustomLinks.length + ')';
+
+            if (allMyCustomLinks.length === 0) {
+                container.innerHTML = '<p style="color:#666;text-align:center;padding:10px;">Zatím jsi nepřidal žádné linky.</p>';
+                moreBtn.style.display = 'none';
+                return;
+            }
+
+            var start = append ? customLinksShown : 0;
+            var end = Math.min(start + CUSTOM_LINKS_PAGE, allMyCustomLinks.length);
+            var html = append ? container.innerHTML : '';
+
+            for (var i = start; i < end; i++) {
+                var item = allMyCustomLinks[i];
+                var isBroken = item.status === 'broken';
+                var borderCol = isBroken ? '#ff4444' : '#0d1b2a';
+                var statusIcon = isBroken ? '\\u26A0\\uFE0F ' : '';
+                var date = new Date(item.added_at).toLocaleDateString('cs-CZ');
+
+                // Extrahovat název titulu z query klíče
+                var titleName = item.query;
+                if (titleName.match(/^tt\\d+:\\s*/)) {
+                    titleName = titleName.replace(/^tt\\d+:\\s*/, '');
+                }
+                if (titleName.match(/^kitsu:\\d+:\\s*/)) {
+                    titleName = titleName.replace(/^kitsu:\\d+:\\s*/, '');
+                }
+
+                var eQ = encodeURIComponent(item.query);
+                var delBtn = '<span onclick="deleteSidebarLink(decodeURIComponent(\\'' + eQ + '\\'), ' + item.idx + ')" style="color:#ff4444;cursor:pointer;font-size:11px;float:right;" title="Smazat">\\u2716</span>';
+
+                html += '<div style="background:#0d1b2a;padding:8px 10px;margin-bottom:6px;border-radius:6px;border-left:3px solid ' + borderCol + ';position:relative;">' +
+                    delBtn +
+                    '<div style="color:#eee;font-size:13px;font-weight:bold;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding-right:20px;">' + statusIcon + (item.display_name || '') + '</div>' +
+                    '<div style="color:#666;font-size:11px;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + titleName + '</div>' +
+                    '<div style="color:#555;font-size:10px;margin-top:2px;">' + date + '</div>' +
+                '</div>';
+            }
+
+            customLinksShown = end;
+            container.innerHTML = html;
+
+            if (customLinksShown < allMyCustomLinks.length) {
+                moreBtn.style.display = 'block';
+            } else {
+                moreBtn.style.display = 'none';
+            }
+        }
+
+        function showMoreCustomLinks() {
+            renderMyCustomLinks(true);
+        }
+
+        async function deleteSidebarLink(query, linkIndex) {
+            if (!confirm('Smazat tento link?')) return;
+            try {
+                var response = await fetch('/api/mylinks/delete', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username: currentUser, query: query, link_index: linkIndex })
+                });
+                var data = await response.json();
+                if (data.success) {
+                    loadMyCustomLinks();
+                    if (currentUser) loadHistory(currentUser);
+                }
+            } catch (e) { /* ignore */ }
+        }
 
         // Enter key handler pro title search
         (function() {
@@ -3318,7 +3472,10 @@ app.get('/mylinks', async (req, res) => {
                     document.getElementById('customWebshareLink').value = '';
                     document.getElementById('customDisplayName').value = '';
                     // Refresh historii po 2s
-                    setTimeout(function() { if (currentUser) loadHistory(currentUser); }, 2000);
+                    setTimeout(function() {
+                        if (currentUser) loadHistory(currentUser);
+                        loadMyCustomLinks();
+                    }, 2000);
                 } else {
                     showCustomMsg(data.error || 'Chyba při ukládání', 'error');
                 }
@@ -3428,7 +3585,10 @@ app.get('/mylinks', async (req, res) => {
 
                 currentUser = username;
                 currentPassword = password;
+                var layout = document.getElementById('pageLayout');
+                if (layout) layout.style.display = 'flex';
                 showHistory(data.searches);
+                loadMyCustomLinks();
             } catch (error) {
                 showLoginError('Chyba připojení: ' + error.message);
             }
