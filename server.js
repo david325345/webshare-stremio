@@ -369,7 +369,7 @@ async function restoreBackup(backupData, restoredBy) {
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '7.16.8', // Fix: Remove confirm template literal
+    version: '7.16.9', // Debug: Add logging to check placeholder replacement
     name: 'Webshare Anime',
     description: 'Anime a filmy z Webshare.cz s vyhledáváním',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -3705,6 +3705,9 @@ app.get('/mylinks', async (req, res) => {
         .replace('__PASSWORD__', JSON.stringify(password))
         .replace('__IS_ADMIN__', username === 'Procha')
         .replace('__TMDB_KEY__', JSON.stringify(tmdbApiKey));
+    
+    console.log('Replaced username:', JSON.stringify(username));
+    console.log('Replaced password:', password ? 'present' : 'missing');
     
     res.send(htmlPage);
 });
