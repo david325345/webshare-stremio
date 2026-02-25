@@ -369,7 +369,7 @@ async function restoreBackup(backupData, restoredBy) {
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '7.16.0', // MAJOR: Admin management system - add/remove admins, stored in R2
+    version: '7.16.1', // Fix: Syntax error in nested template strings
     name: 'Webshare Anime',
     description: 'Anime a filmy z Webshare.cz s vyhledáváním',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -3578,16 +3578,18 @@ app.get('/mylinks', async (req, res) => {
                 
                 const list = document.getElementById('adminsList');
                 list.innerHTML = '<h4 style="color: #fff; margin: 10px 0;">Současní admini:</h4>' + 
-                    admins.map(admin => `
-                        <div style="background: #0d1b2a; padding: 10px; margin: 5px 0; border-radius: 5px; display: flex; justify-content: space-between; align-items: center;">
-                            <span style="color: #00d9ff; font-weight: bold;">${admin === 'Procha' ? '👑 ' : ''}${admin}</span>
-                            ${admin !== 'Procha' ? `
-                                <button onclick="removeExistingAdmin('${admin}')" style="padding: 5px 10px; background: #ff4444; color: white; border: none; border-radius: 3px; cursor: pointer;">
-                                    ❌ Odebrat
-                                </button>
-                            ` : '<span style="color: #ff9500;">Super Admin (nelze odebrat)</span>'}
-                        </div>
-                    `).join('');
+                    admins.map(admin => {
+                        const isSuperAdmin = admin === 'Procha';
+                        const crown = isSuperAdmin ? '👑 ' : '';
+                        const removeBtn = !isSuperAdmin ? 
+                            '<button onclick="removeExistingAdmin(\'' + admin + '\')" style="padding: 5px 10px; background: #ff4444; color: white; border: none; border-radius: 3px; cursor: pointer;">❌ Odebrat</button>' :
+                            '<span style="color: #ff9500;">Super Admin (nelze odebrat)</span>';
+                        
+                        return '<div style="background: #0d1b2a; padding: 10px; margin: 5px 0; border-radius: 5px; display: flex; justify-content: space-between; align-items: center;">' +
+                            '<span style="color: #00d9ff; font-weight: bold;">' + crown + admin + '</span>' +
+                            removeBtn +
+                            '</div>';
+                    }).join('');
                 
                 document.getElementById('adminManagerPanel').style.display = 'block';
             } catch (error) {
