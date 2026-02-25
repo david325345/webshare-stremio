@@ -369,7 +369,7 @@ async function restoreBackup(backupData, restoredBy) {
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '7.16.7', // Fix: Remove template literals from JavaScript inside HTML template string
+    version: '7.16.8', // Fix: Remove confirm template literal
     name: 'Webshare Anime',
     description: 'Anime a filmy z Webshare.cz s vyhledáváním',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -3655,7 +3655,7 @@ app.get('/mylinks', async (req, res) => {
         }
         
         async function removeExistingAdmin(username) {
-            if (!confirm(`Opravdu odebrat admin práva uživateli ${username}?`)) {
+            if (!confirm('Opravdu odebrat admin práva uživateli ' + username + '?')) {
                 return;
             }
             
