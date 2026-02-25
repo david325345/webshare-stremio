@@ -292,7 +292,7 @@ async function restoreBackup(backupData, restoredBy) {
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '7.13.2', // Fix: Remove Promise.race timeout that was breaking multiple links
+    version: '7.13.3', // Debug: Add extensive logging to diagnose why manual links fail to load
     name: 'Webshare Anime',
     description: 'Anime a filmy z Webshare.cz s vyhledáváním',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -1313,12 +1313,23 @@ async function handleStreamRequest(args) {
                 
                 // Paralelní fetchování všech manual links (rychlejší než sequential)
                 const linkPromises = linksToProcess.map(async (manual, i) => {
+                    console.log(`[Manual ${i}] Processing:`, manual.webshare_ident, manual.display_name);
                     try {
+                        console.log(`[Manual ${i}] Fetching file info...`);
                         const fileInfo = await getFileInfo(manual.webshare_ident, token);
-                        if (!fileInfo) return null;
+                        if (!fileInfo) {
+                            console.log(`[Manual ${i}] ❌ No file info returned`);
+                            return null;
+                        }
+                        console.log(`[Manual ${i}] ✅ File info:`, fileInfo.name);
                         
+                        console.log(`[Manual ${i}] Fetching link...`);
                         const link = await getFileLink(manual.webshare_ident, token);
-                        if (!link) return null;
+                        if (!link) {
+                            console.log(`[Manual ${i}] ❌ No link returned`);
+                            return null;
+                        }
+                        console.log(`[Manual ${i}] ✅ Link obtained`);
                         
                         const quality = detectQuality(fileInfo.name);
                         const qualityStr = quality.resolution || 'SD';
@@ -1333,7 +1344,7 @@ async function handleStreamRequest(args) {
                         const streamName = `Webshare.cz
 ${languages.join('+')} 📺 ${qualityStr} 💾${sizeStr}`;
                         
-                        return {
+                        const stream = {
                             name: streamName,
                             title: `📌 ${manual.display_name || fileInfo.name || 'Manuální link'}`,
                             url: link,
@@ -1343,8 +1354,11 @@ ${languages.join('+')} 📺 ${qualityStr} 💾${sizeStr}`;
                                 filename: fileInfo.name
                             }
                         };
+                        console.log(`[Manual ${i}] ✅ Stream created:`, stream.title);
+                        return stream;
                     } catch (error) {
-                        console.error(`Failed to load manual link [${i}]:`, error.message);
+                        console.error(`[Manual ${i}] ❌ ERROR:`, error.message);
+                        console.error(`[Manual ${i}] Stack:`, error.stack);
                         return null;
                     }
                 });
