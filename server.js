@@ -3766,6 +3766,7 @@ app.get('/mylinks', async (req, res) => {
     console.log('Replaced username:', JSON.stringify(username));
     console.log('Replaced password:', password ? 'present' : 'missing');
     
+    htmlPage = htmlPage.replace(/currentIsAdmin\s*=\s*none/g, 'currentIsAdmin = false');
     res.send(htmlPage);
 });
 
