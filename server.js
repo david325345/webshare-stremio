@@ -2960,18 +2960,18 @@ app.get('/mylinks', async (req, res) => {
     const adminPanelHTML = isAdminUser ? `
     <div style="background: #2d1b00; border: 2px solid #ff9500; border-radius: 10px; padding: 20px; margin: 20px 0;">
         <h2 style="color: #ff9500; margin-top: 0;">&#x1F451; Admin Panel</h2>
-        <div style="display: flex; gap: 10px; margin-top: 15px; flex-wrap: wrap;">
-            <button onclick="downloadBackup()" style="flex: 1; min-width: 150px; padding: 12px; background: #00d9ff; color: #1a1a2e; border: none; border-radius: 5px; cursor: pointer; font-weight: bold;">
+        <div style="display: flex; gap: 10px; margin-top: 15px; flex-wrap: wrap; align-items: stretch;">
+            <button onclick="downloadBackup()" style="flex: 1; min-width: 150px; padding: 12px; background: #00d9ff; color: #1a1a2e; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; font-size: 14px; margin: 0;">
                 &#x1F4BE; Stáhnout zálohu
             </button>
-            <label style="flex: 1; min-width: 150px; padding: 12px; background: #7b2cbf; color: white; border-radius: 5px; cursor: pointer; font-weight: bold; text-align: center; display: block;">
+            <label style="flex: 1; min-width: 150px; padding: 12px; background: #7b2cbf; color: white; border-radius: 5px; cursor: pointer; font-weight: bold; text-align: center; display: flex; align-items: center; justify-content: center; font-size: 14px; margin: 0; box-sizing: border-box;">
                 &#x1F4E4; Nahrát zálohu
                 <input type="file" id="restoreFile" accept=".json" style="display: none;" onchange="restoreBackup(this)">
             </label>
-            <button onclick="showBrokenLinks()" style="flex: 1; min-width: 150px; padding: 12px; background: #ff4444; color: white; border: none; border-radius: 5px; cursor: pointer; font-weight: bold;">
+            <button onclick="showBrokenLinks()" style="flex: 1; min-width: 150px; padding: 12px; background: #ff4444; color: white; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; font-size: 14px; margin: 0;">
                 &#x26A0;&#xFE0F; Nefunkční linky
             </button>
-            <button onclick="showAdminManager()" style="flex: 1; min-width: 150px; padding: 12px; background: #ff9500; color: white; border: none; border-radius: 5px; cursor: pointer; font-weight: bold;">
+            <button onclick="showAdminManager()" style="flex: 1; min-width: 150px; padding: 12px; background: #ff9500; color: white; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; font-size: 14px; margin: 0;">
                 &#x1F465; Správa adminů
             </button>
         </div>
