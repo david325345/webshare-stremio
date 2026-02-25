@@ -369,7 +369,7 @@ async function restoreBackup(backupData, restoredBy) {
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '7.17.3', // Debug: Print more of script tag (10000 chars)
+    version: '7.18.0', // FINAL FIX: Remove ALL template literals from client JS, use string concatenation
     name: 'Webshare Anime',
     description: 'Anime a filmy z Webshare.cz s vyhledáváním',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -3342,23 +3342,22 @@ app.get('/mylinks', async (req, res) => {
                     // Přeskočit broken linky pro ostatní (ne vlastníka, ne admina)
                     if (isBroken && !isOwner && !isAdmin) return '';
                     
-                    return \`
-                    <div style="background: \${isBroken ? '#2d1b1b' : '#0d1b2a'}; padding: 10px; margin-top: 10px; border-radius: 5px; position: relative; border: \${isBroken ? '2px solid #ff4444' : 'none'};">
-                        <strong style="color: \${isBroken ? '#ff4444' : '#00d9ff'};">
-                            \${isBroken ? '⚠️ NEFUNKČNÍ LINK' : '📌 Manuální link'}:
-                        </strong> \${manual.display_name}<br>
-                        <small style="color: #999;">
-                            Přidal: \${manual.added_by} • \${new Date(manual.added_at).toLocaleDateString('cs-CZ')}
-                            \${isBroken ? \` • <span style="color: #ff4444;">Nefunguje od: \${new Date(manual.last_checked).toLocaleDateString('cs-CZ')}</span>\` : ''}
-                        </small>
-                        \${(isOwner || isAdmin) ? \`
-                            <button onclick="deleteLink('\${query.replace(/'/g, "\\\\'")}', \${idx}, '\${encodeURIComponent(query)}')" 
-                                    style="position: absolute; top: 10px; right: 10px; padding: 5px 10px; background: #ff4444; color: white; border: none; border-radius: 3px; cursor: pointer; font-size: 12px;">
-                                🗑️ Smazat
-                            </button>
-                        \` : ''}
-                    </div>
-                \`;
+                    const bgColor = isBroken ? '#2d1b1b' : '#0d1b2a';
+                    const borderStyle = isBroken ? '2px solid #ff4444' : 'none';
+                    const textColor = isBroken ? '#ff4444' : '#00d9ff';
+                    const linkType = isBroken ? '⚠️ NEFUNKČNÍ LINK' : '📌 Manuální link';
+                    const dateInfo = new Date(manual.added_at).toLocaleDateString('cs-CZ');
+                    const brokenInfo = isBroken ? ' • <span style="color: #ff4444;">Nefunguje od: ' + new Date(manual.last_checked).toLocaleDateString('cs-CZ') + '</span>' : '';
+                    const deleteButton = (isOwner || isAdmin) ? 
+                        '<button onclick="deleteLink(\\'' + query.replace(/'/g, "\\\\'") + '\\', ' + idx + ', \\'' + encodeURIComponent(query) + '\\')" ' +
+                        'style="position: absolute; top: 10px; right: 10px; padding: 5px 10px; background: #ff4444; color: white; border: none; border-radius: 3px; cursor: pointer; font-size: 12px;">' +
+                        '🗑️ Smazat</button>' : '';
+                    
+                    return '<div style="background: ' + bgColor + '; padding: 10px; margin-top: 10px; border-radius: 5px; position: relative; border: ' + borderStyle + ';">' +
+                        '<strong style="color: ' + textColor + ';">' + linkType + ':</strong> ' + manual.display_name + '<br>' +
+                        '<small style="color: #999;">Přidal: ' + manual.added_by + ' • ' + dateInfo + brokenInfo + '</small>' +
+                        deleteButton +
+                        '</div>';
                 }).filter(Boolean).join('') : '';
                 
                 return \`
@@ -3768,23 +3767,6 @@ app.get('/mylinks', async (req, res) => {
     
     console.log('Replaced username:', JSON.stringify(username));
     console.log('Replaced password:', password ? 'present' : 'missing');
-    console.log('Checking for unreplaced placeholders...');
-    if (htmlPage.includes('__USERNAME__')) console.warn('WARNING: __USERNAME__ not replaced!');
-    if (htmlPage.includes('__PASSWORD__')) console.warn('WARNING: __PASSWORD__ not replaced!');
-    if (htmlPage.includes('__IS_ADMIN__')) console.warn('WARNING: __IS_ADMIN__ not replaced!');
-    if (htmlPage.includes('__TMDB_KEY__')) console.warn('WARNING: __TMDB_KEY__ not replaced!');
-    
-    // Debug: Print script variables section
-    const scriptStart = htmlPage.indexOf('<script>');
-    if (scriptStart > -1) {
-        const scriptEnd = htmlPage.indexOf('</script>', scriptStart);
-        const scriptContent = htmlPage.substring(scriptStart, scriptEnd + 9);
-        console.log('=== GENERATED SCRIPT TAG (first 5000 chars) ===');
-        console.log(scriptContent.substring(0, 5000));
-        console.log('=== MIDDLE PART (chars 5000-10000) ===');
-        console.log(scriptContent.substring(5000, 10000));
-        console.log('=== END SCRIPT TAG ===');
-    }
     
     res.send(htmlPage);
 });
