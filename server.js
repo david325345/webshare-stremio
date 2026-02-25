@@ -369,7 +369,7 @@ async function restoreBackup(backupData, restoredBy) {
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '7.16.12', // Debug: Print generated JavaScript to see what browser gets
+    version: '7.17.0', // MAJOR FIX: Remove nested template literals, use placeholders for admin panel
     name: 'Webshare Anime',
     description: 'Anime a filmy z Webshare.cz s vyhledáváním',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -3070,7 +3070,10 @@ app.get('/mylinks', async (req, res) => {
         <p id="loginError" class="error hidden"></p>
     </div>
     
-    ${username === 'Procha' ? `
+    __ADMIN_PANEL__
+    
+    <div id="historySection" class="__HISTORY_CLASS__">
+        <div id="loadingMsg" style="text-align: center; padding: 20px; __LOADING_STYLE__">
     <div style="background: #2d1b00; border: 2px solid #ff9500; border-radius: 10px; padding: 20px; margin: 20px 0;">
         <h2 style="color: #ff9500; margin-top: 0;">👑 Admin Panel</h2>
         <div style="display: flex; gap: 10px; margin-top: 15px; flex-wrap: wrap;">
@@ -3115,10 +3118,9 @@ app.get('/mylinks', async (req, res) => {
             </button>
         </div>
     </div>
-    ` : ''}
     
-    <div id="historySection" class="${username ? '' : 'hidden'}">
-        <div id="loadingMsg" style="text-align: center; padding: 20px; ${username ? '' : 'display: none;'}">
+    <div id="historySection" class="__HISTORY_CLASS__">
+        <div id="loadingMsg" style="text-align: center; padding: 20px; __LOADING_STYLE__">
             <p style="color: #00d9ff; font-size: 18px;">⏳ Načítám vaši historii vyhledávání...</p>
         </div>
         <h2 style="display: none;" id="histTitle">📊 Vaše historie vyhledávání</h2>
@@ -3127,7 +3129,6 @@ app.get('/mylinks', async (req, res) => {
     </div>
     
     <script>
-        alert('JavaScript START - pokud vidíš toto, JS funguje!');
         console.log('My Links JS loaded');
         let currentUser = __USERNAME__;
         let currentPassword = __PASSWORD__;
@@ -3707,12 +3708,63 @@ app.get('/mylinks', async (req, res) => {
 </html>
     `;
     
+    // Build admin panel HTML if user is admin
+    const adminPanelHTML = (username === 'Procha') ? `
+    <div style="background: #2d1b00; border: 2px solid #ff9500; border-radius: 10px; padding: 20px; margin: 20px 0;">
+        <h2 style="color: #ff9500; margin-top: 0;">👑 Admin Panel</h2>
+        <div style="display: flex; gap: 10px; margin-top: 15px; flex-wrap: wrap;">
+            <button onclick="downloadBackup()" style="flex: 1; min-width: 150px; padding: 12px; background: #00d9ff; color: #1a1a2e; border: none; border-radius: 5px; cursor: pointer; font-weight: bold;">
+                💾 Stáhnout zálohu
+            </button>
+            <label style="flex: 1; min-width: 150px; padding: 12px; background: #7b2cbf; color: white; border-radius: 5px; cursor: pointer; font-weight: bold; text-align: center; display: block;">
+                📤 Nahrát zálohu
+                <input type="file" id="restoreFile" accept=".json" style="display: none;" onchange="restoreBackup(this)">
+            </label>
+            <button onclick="showBrokenLinks()" style="flex: 1; min-width: 150px; padding: 12px; background: #ff4444; color: white; border: none; border-radius: 5px; cursor: pointer; font-weight: bold;">
+                ⚠️ Nefunkční linky
+            </button>
+            <button onclick="showAdminManager()" style="flex: 1; min-width: 150px; padding: 12px; background: #ff9500; color: white; border: none; border-radius: 5px; cursor: pointer; font-weight: bold;">
+                👥 Správa adminů
+            </button>
+        </div>
+        <p id="adminMessage" style="margin-top: 10px; display: none;"></p>
+        
+        <!-- Admin Management Panel -->
+        <div id="adminManagerPanel" style="display: none; margin-top: 20px; padding: 15px; background: #1a0d00; border: 2px solid #ff9500; border-radius: 8px;">
+            <h3 style="color: #ff9500; margin-top: 0;">👥 Správa adminů</h3>
+            <div id="adminsList" style="margin-bottom: 15px;"></div>
+            <div style="display: flex; gap: 10px; margin-top: 15px;">
+                <input type="text" id="newAdminUsername" placeholder="Uživatelské jméno" style="flex: 1; padding: 10px; background: #0d1b2a; color: white; border: 1px solid #ff9500; border-radius: 5px;">
+                <button onclick="addNewAdmin()" style="padding: 10px 20px; background: #00d9ff; color: #1a1a2e; border: none; border-radius: 5px; cursor: pointer; font-weight: bold;">
+                    ➕ Přidat admina
+                </button>
+            </div>
+            <p id="adminManagerMessage" style="margin-top: 10px; display: none;"></p>
+            <button onclick="hideAdminManager()" style="margin-top: 15px; padding: 8px 16px; background: #444; color: white; border: none; border-radius: 5px; cursor: pointer;">
+                Zavřít
+            </button>
+        </div>
+        
+        <!-- Broken Links Panel -->
+        <div id="brokenLinksPanel" style="display: none; margin-top: 20px; padding: 15px; background: #1a0d0d; border: 2px solid #ff4444; border-radius: 8px;">
+            <h3 style="color: #ff4444; margin-top: 0;">⚠️ Nefunkční manuální linky</h3>
+            <div id="brokenLinksList"></div>
+            <button onclick="hideBrokenLinks()" style="margin-top: 10px; padding: 8px 16px; background: #444; color: white; border: none; border-radius: 5px; cursor: pointer;">
+                Zavřít
+            </button>
+        </div>
+    </div>
+    ` : '';
+    
     // Replace placeholders with actual values (using regex with global flag)
     htmlPage = htmlPage
         .replace(/__USERNAME__/g, JSON.stringify(username || ''))
         .replace(/__PASSWORD__/g, JSON.stringify(password || ''))
         .replace(/__IS_ADMIN__/g, JSON.stringify(username === 'Procha'))
-        .replace(/__TMDB_KEY__/g, JSON.stringify(tmdbApiKey || ''));
+        .replace(/__TMDB_KEY__/g, JSON.stringify(tmdbApiKey || ''))
+        .replace(/__ADMIN_PANEL__/g, adminPanelHTML)
+        .replace(/__HISTORY_CLASS__/g, username ? '' : 'hidden')
+        .replace(/__LOADING_STYLE__/g, username ? '' : 'display: none;');
     
     console.log('Replaced username:', JSON.stringify(username));
     console.log('Replaced password:', password ? 'present' : 'missing');
