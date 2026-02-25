@@ -369,7 +369,7 @@ async function restoreBackup(backupData, restoredBy) {
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '7.17.1', // Fix: Use toString() for boolean instead of JSON.stringify
+    version: '7.17.2', // Debug: Print full script tag to find syntax error
     name: 'Webshare Anime',
     description: 'Anime a filmy z Webshare.cz s vyhledáváním',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -3775,10 +3775,13 @@ app.get('/mylinks', async (req, res) => {
     if (htmlPage.includes('__TMDB_KEY__')) console.warn('WARNING: __TMDB_KEY__ not replaced!');
     
     // Debug: Print script variables section
-    const scriptStart = htmlPage.indexOf('let currentUser =');
+    const scriptStart = htmlPage.indexOf('<script>');
     if (scriptStart > -1) {
-        console.log('Script variables section:');
-        console.log(htmlPage.substring(scriptStart, scriptStart + 300));
+        const scriptEnd = htmlPage.indexOf('</script>', scriptStart);
+        const scriptContent = htmlPage.substring(scriptStart, scriptEnd + 9);
+        console.log('=== GENERATED SCRIPT TAG (first 2000 chars) ===');
+        console.log(scriptContent.substring(0, 2000));
+        console.log('=== END SCRIPT TAG ===');
     }
     
     res.send(htmlPage);
