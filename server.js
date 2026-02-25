@@ -3760,13 +3760,12 @@ app.get('/mylinks', async (req, res) => {
         .replace(/__IS_ADMIN__/g, JSON.stringify(username === 'Procha'))
         .replace(/__TMDB_KEY__/g, JSON.stringify(tmdbApiKey || ''))
         .replace(/__ADMIN_PANEL__/g, adminPanelHTML)
-        .replace(/__HISTORY_CLASS__/g, username ? '' : 'hidden')
+        .replace(/__HISTORY_CLASS__/g, username ? 'block' : 'none')
         .replace(/__LOADING_STYLE__/g, username ? '' : 'display: none;');
     
     console.log('Replaced username:', JSON.stringify(username));
     console.log('Replaced password:', password ? 'present' : 'missing');
     
-    htmlPage = htmlPage.replace(/currentIsAdmin\s*=\s*none/g, 'currentIsAdmin = false');
     res.send(htmlPage);
 });
 
