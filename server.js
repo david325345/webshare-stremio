@@ -369,7 +369,7 @@ async function restoreBackup(backupData, restoredBy) {
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '7.18.0', // FINAL FIX: Remove ALL template literals from client JS, use string concatenation
+    version: '7.18.1', // Debug: Add logging to history endpoint to see if it's being called
     name: 'Webshare Anime',
     description: 'Anime a filmy z Webshare.cz s vyhledáváním',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -3773,20 +3773,25 @@ app.get('/mylinks', async (req, res) => {
 
 // API endpoint - získat historii vyhledávání uživatele (BEZ ověření hesla)
 app.post('/api/mylinks/history', async (req, res) => {
+    console.log('📥 POST /api/mylinks/history - Request received');
     try {
         const { username } = req.body;
+        console.log('  Username:', username);
         
         if (!username) {
+            console.log('  ❌ Missing username');
             return res.json({ error: 'Missing username' });
         }
         
         // Získat historii z R2
+        console.log('  Fetching history from R2...');
         const searches = await getFromR2(`user-searches/${username}.json`);
+        console.log('  ✅ History fetched, searches:', Object.keys(searches || {}).length);
         
         res.json({ searches: searches || {} });
         
     } catch (error) {
-        console.error('History API error:', error);
+        console.error('  ❌ History API error:', error);
         res.json({ error: 'Server error' });
     }
 });
