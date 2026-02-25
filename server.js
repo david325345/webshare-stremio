@@ -369,7 +369,7 @@ async function restoreBackup(backupData, restoredBy) {
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '7.16.3', // Fix: Use JSON.stringify instead of template string interpolation in script tag
+    version: '7.16.4', // Fix: Prepare variables before template string to avoid nested interpolation issues
     name: 'Webshare Anime',
     description: 'Anime a filmy z Webshare.cz s vyhledáváním',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -2951,6 +2951,11 @@ app.get('/mylinks', async (req, res) => {
     
     console.log('My Links - rendering for username:', username);
     
+    const currentUserJS = JSON.stringify(username);
+    const currentPasswordJS = JSON.stringify(password);
+    const currentIsAdminJS = username === 'Procha';
+    const tmdbApiKeyJS = JSON.stringify(tmdbApiKey);
+    
     res.send(`
 <!DOCTYPE html>
 <html>
@@ -3108,10 +3113,10 @@ app.get('/mylinks', async (req, res) => {
     
     <script>
         console.log('My Links JS loaded');
-        let currentUser = ${JSON.stringify(username)};
-        let currentPassword = ${JSON.stringify(password)};
-        let currentIsAdmin = ${username === 'Procha'};
-        const tmdbApiKey = ${JSON.stringify(tmdbApiKey)};
+        let currentUser = ${currentUserJS};
+        let currentPassword = ${currentPasswordJS};
+        let currentIsAdmin = ${currentIsAdminJS};
+        const tmdbApiKey = ${tmdbApiKeyJS};
         console.log('TMDB API key available:', !!tmdbApiKey);
         console.log('Current user:', currentUser);
         console.log('Is admin:', currentIsAdmin);
