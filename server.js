@@ -292,7 +292,7 @@ async function restoreBackup(backupData, restoredBy) {
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '7.13.0', // MAJOR: Multiple manual links per title - array structure instead of single object
+    version: '7.13.2', // Fix: Remove Promise.race timeout that was breaking multiple links
     name: 'Webshare Anime',
     description: 'Anime a filmy z Webshare.cz s vyhledáváním',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -1305,50 +1305,55 @@ async function handleStreamRequest(args) {
             console.log('Checking manual links for:', queryKey);
             
             if (manualLinks[queryKey] && Array.isArray(manualLinks[queryKey])) {
-                // Iterovat přes všechny manuální linky pro tento query
-                for (let i = 0; i < manualLinks[queryKey].length; i++) {
-                    const manual = manualLinks[queryKey][i];
-                    console.log(`Found manual link [${i}]:`, manual);
+                // LIMIT: Max 10 manual links per title pro výkonnost
+                const maxLinks = 10;
+                const linksToProcess = manualLinks[queryKey].slice(0, maxLinks);
                 
+                console.log(`Found ${manualLinks[queryKey].length} manual links, processing ${linksToProcess.length}`);
+                
+                // Paralelní fetchování všech manual links (rychlejší než sequential)
+                const linkPromises = linksToProcess.map(async (manual, i) => {
                     try {
-                        // Získat info a link pro manuální soubor
                         const fileInfo = await getFileInfo(manual.webshare_ident, token);
-                        if (fileInfo) {
-                            const link = await getFileLink(manual.webshare_ident, token);
-                            if (link) {
-                                // Extrahovat kvalitu z názvu souboru
-                                const quality = detectQuality(fileInfo.name);
-                                const qualityStr = quality.resolution || 'SD';
-                                const sizeStr = formatSize(fileInfo.size);
-                                
-                                // Detekce jazyka
-                                const nameUpper = fileInfo.name.toUpperCase();
-                                const languages = [];
-                                if (nameUpper.includes('CZ') || nameUpper.includes('CZECH')) languages.push('🇨🇿 CZ');
-                                if (nameUpper.includes('SK') || nameUpper.includes('SLOVAK')) languages.push('🇸🇰 SK');
-                                if (nameUpper.includes('EN') || nameUpper.includes('ENGLISH')) languages.push('🇬🇧 EN');
-                                
-                                // Název streamu - VLEVO se zobrazí název filmu/epizody
-                                const streamName = `Webshare.cz
+                        if (!fileInfo) return null;
+                        
+                        const link = await getFileLink(manual.webshare_ident, token);
+                        if (!link) return null;
+                        
+                        const quality = detectQuality(fileInfo.name);
+                        const qualityStr = quality.resolution || 'SD';
+                        const sizeStr = formatSize(fileInfo.size);
+                        
+                        const nameUpper = fileInfo.name.toUpperCase();
+                        const languages = [];
+                        if (nameUpper.includes('CZ') || nameUpper.includes('CZECH')) languages.push('🇨🇿 CZ');
+                        if (nameUpper.includes('SK') || nameUpper.includes('SLOVAK')) languages.push('🇸🇰 SK');
+                        if (nameUpper.includes('EN') || nameUpper.includes('ENGLISH')) languages.push('🇬🇧 EN');
+                        
+                        const streamName = `Webshare.cz
 ${languages.join('+')} 📺 ${qualityStr} 💾${sizeStr}`;
-                                
-                                manualLinkStreams.push({
-                                    name: streamName,
-                                    title: `📌 ${manual.display_name || fileInfo.name || 'Manuální link'}`,
-                                    url: link,
-                                    behaviorHints: {
-                                        bingeGroup: 'webshare-manual',
-                                        videoSize: fileInfo.size,
-                                        filename: fileInfo.name
-                                    }
-                                });
-                                console.log(`Manual link stream [${i}] created:`, manual.display_name || fileInfo.name);
+                        
+                        return {
+                            name: streamName,
+                            title: `📌 ${manual.display_name || fileInfo.name || 'Manuální link'}`,
+                            url: link,
+                            behaviorHints: {
+                                bingeGroup: 'webshare-manual',
+                                videoSize: fileInfo.size,
+                                filename: fileInfo.name
                             }
-                        }
+                        };
                     } catch (error) {
                         console.error(`Failed to load manual link [${i}]:`, error.message);
+                        return null;
                     }
-                }
+                });
+                
+                // Počkat na všechny paralelně (rychlé)
+                const results = await Promise.all(linkPromises);
+                
+                manualLinkStreams = results.filter(s => s !== null);
+                console.log(`Loaded ${manualLinkStreams.length}/${linksToProcess.length} manual link streams`);
             }
         }
 
