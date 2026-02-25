@@ -369,7 +369,7 @@ async function restoreBackup(backupData, restoredBy) {
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '7.16.4', // Fix: Prepare variables before template string to avoid nested interpolation issues
+    version: '7.16.5', // Fix: Create scriptVars string separately to inject into template
     name: 'Webshare Anime',
     description: 'Anime a filmy z Webshare.cz s vyhledáváním',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -2951,12 +2951,34 @@ app.get('/mylinks', async (req, res) => {
     
     console.log('My Links - rendering for username:', username);
     
-    const currentUserJS = JSON.stringify(username);
-    const currentPasswordJS = JSON.stringify(password);
-    const currentIsAdminJS = username === 'Procha';
-    const tmdbApiKeyJS = JSON.stringify(tmdbApiKey);
+    // Prepare JavaScript values
+    const scriptVars = `
+        let currentUser = ${JSON.stringify(username)};
+        let currentPassword = ${JSON.stringify(password)};
+        let currentIsAdmin = ${username === 'Procha'};
+        const tmdbApiKey = ${JSON.stringify(tmdbApiKey)};
+    `;
     
     res.send(`
+<!DOCTYPE html>
+<html>
+<head>
+    <title>My Links - Webshare Addon</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            color: #ffffff;
+            min-height: 100vh;
+            padding: 20px;
+        }
 <!DOCTYPE html>
 <html>
 <head>
@@ -3113,10 +3135,7 @@ app.get('/mylinks', async (req, res) => {
     
     <script>
         console.log('My Links JS loaded');
-        let currentUser = ${currentUserJS};
-        let currentPassword = ${currentPasswordJS};
-        let currentIsAdmin = ${currentIsAdminJS};
-        const tmdbApiKey = ${tmdbApiKeyJS};
+        ${scriptVars}
         console.log('TMDB API key available:', !!tmdbApiKey);
         console.log('Current user:', currentUser);
         console.log('Is admin:', currentIsAdmin);
