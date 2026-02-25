@@ -306,7 +306,7 @@ async function deleteManualLink(query, linkIndex, requestingUser) {
         const link = manualLinks[query][linkIndex];
         
         // Check permissions
-        if (!isAdmin(requestingUser) && link.added_by !== requestingUser) {
+        if (!await isAdmin(requestingUser) && link.added_by !== requestingUser) {
             return { success: false, error: 'Nemáte oprávnění smazat tento link' };
         }
         
@@ -2951,38 +2951,62 @@ app.get('/mylinks', async (req, res) => {
     
     console.log('My Links - rendering for username:', username);
     
-    // Build the HTML page
-    let htmlPage = `
-<!DOCTYPE html>
+    const isAdminUser = await isAdmin(username);
+    const loginDisplay = username ? 'none' : 'block';
+    const historyClass = username ? '' : 'hidden';
+    const loadingStyle = username ? '' : 'display: none;';
+    
+    // Build admin panel HTML if user is admin
+    const adminPanelHTML = isAdminUser ? `
+    <div style="background: #2d1b00; border: 2px solid #ff9500; border-radius: 10px; padding: 20px; margin: 20px 0;">
+        <h2 style="color: #ff9500; margin-top: 0;">&#x1F451; Admin Panel</h2>
+        <div style="display: flex; gap: 10px; margin-top: 15px; flex-wrap: wrap;">
+            <button onclick="downloadBackup()" style="flex: 1; min-width: 150px; padding: 12px; background: #00d9ff; color: #1a1a2e; border: none; border-radius: 5px; cursor: pointer; font-weight: bold;">
+                &#x1F4BE; Stáhnout zálohu
+            </button>
+            <label style="flex: 1; min-width: 150px; padding: 12px; background: #7b2cbf; color: white; border-radius: 5px; cursor: pointer; font-weight: bold; text-align: center; display: block;">
+                &#x1F4E4; Nahrát zálohu
+                <input type="file" id="restoreFile" accept=".json" style="display: none;" onchange="restoreBackup(this)">
+            </label>
+            <button onclick="showBrokenLinks()" style="flex: 1; min-width: 150px; padding: 12px; background: #ff4444; color: white; border: none; border-radius: 5px; cursor: pointer; font-weight: bold;">
+                &#x26A0;&#xFE0F; Nefunkční linky
+            </button>
+            <button onclick="showAdminManager()" style="flex: 1; min-width: 150px; padding: 12px; background: #ff9500; color: white; border: none; border-radius: 5px; cursor: pointer; font-weight: bold;">
+                &#x1F465; Správa adminů
+            </button>
+        </div>
+        <p id="adminMessage" style="margin-top: 10px; display: none;"></p>
+        <div id="adminManagerPanel" style="display: none; margin-top: 20px; padding: 15px; background: #1a0d00; border: 2px solid #ff9500; border-radius: 8px;">
+            <h3 style="color: #ff9500; margin-top: 0;">&#x1F465; Správa adminů</h3>
+            <div id="adminsList" style="margin-bottom: 15px;"></div>
+            <div style="display: flex; gap: 10px; margin-top: 15px;">
+                <input type="text" id="newAdminUsername" placeholder="Uživatelské jméno" style="flex: 1; padding: 10px; background: #0d1b2a; color: white; border: 1px solid #ff9500; border-radius: 5px;">
+                <button onclick="addNewAdmin()" style="padding: 10px 20px; background: #00d9ff; color: #1a1a2e; border: none; border-radius: 5px; cursor: pointer; font-weight: bold;">
+                    &#x2795; Přidat admina
+                </button>
+            </div>
+            <p id="adminManagerMessage" style="margin-top: 10px; display: none;"></p>
+            <button onclick="hideAdminManager()" style="margin-top: 15px; padding: 8px 16px; background: #444; color: white; border: none; border-radius: 5px; cursor: pointer;">Zavřít</button>
+        </div>
+        <div id="brokenLinksPanel" style="display: none; margin-top: 20px; padding: 15px; background: #1a0d0d; border: 2px solid #ff4444; border-radius: 8px;">
+            <h3 style="color: #ff4444; margin-top: 0;">&#x26A0;&#xFE0F; Nefunkční manuální linky</h3>
+            <div id="brokenLinksList"></div>
+            <button onclick="hideBrokenLinks()" style="margin-top: 10px; padding: 8px 16px; background: #444; color: white; border: none; border-radius: 5px; cursor: pointer;">Zavřít</button>
+        </div>
+    </div>` : '';
+
+    const htmlPage = `<!DOCTYPE html>
 <html>
 <head>
     <title>My Links - Webshare Addon</title>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <style>
-        * {
-            box-sizing: border-box;
-            margin: 0;
-            padding: 0;
-        }
+        * { box-sizing: border-box; }
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
-            color: #ffffff;
-            min-height: 100vh;
-            padding: 20px;
-        }
-<!DOCTYPE html>
-<html>
-<head>
-    <title>My Links - Webshare Addon</title>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <style>
-        body { 
-            font-family: Arial, sans-serif; 
-            max-width: 900px; 
-            margin: 50px auto; 
+            max-width: 900px;
+            margin: 30px auto;
             padding: 20px;
             background: #1a1a2e;
             color: #eee;
@@ -2995,9 +3019,7 @@ app.get('/mylinks', async (req, res) => {
             border-radius: 10px;
             margin: 20px 0;
         }
-        .form-group {
-            margin: 15px 0;
-        }
+        .form-group { margin: 15px 0; }
         label {
             display: block;
             margin-bottom: 5px;
@@ -3050,366 +3072,269 @@ app.get('/mylinks', async (req, res) => {
         .hidden { display: none; }
         .success { color: #00ff00; }
         .error { color: #ff0000; }
+        .info { color: #00d9ff; }
     </style>
 </head>
 <body>
-    <h1>🔗 My Links - Správa manuálních linků</h1>
-    
-    <div id="loginSection" class="login-form" style="display: ${username ? 'none' : 'block'}">
+    <h1>&#x1F517; My Links - Správa manuálních linků</h1>
+
+    <div id="loginSection" class="login-form" style="display: ${loginDisplay}">
         <h2>Přihlášení</h2>
         <p>Použijte své Webshare přihlašovací údaje:</p>
         <div class="form-group">
             <label>Username:</label>
-            <input type="text" id="username" placeholder="vase-jmeno">
+            <input type="text" id="loginUsername" placeholder="vase-jmeno">
         </div>
         <div class="form-group">
             <label>Password:</label>
-            <input type="password" id="password" placeholder="••••••••">
+            <input type="password" id="loginPassword" placeholder="••••••••">
         </div>
-        <button onclick="login()">Přihlásit se</button>
+        <button onclick="doLogin()">Přihlásit se</button>
         <p id="loginError" class="error hidden"></p>
     </div>
-    
-    __ADMIN_PANEL__
-    
-    <div id="historySection" class="__HISTORY_CLASS__">
-        <div id="loadingMsg" style="text-align: center; padding: 20px; __LOADING_STYLE__">
-    <div style="background: #2d1b00; border: 2px solid #ff9500; border-radius: 10px; padding: 20px; margin: 20px 0;">
-        <h2 style="color: #ff9500; margin-top: 0;">👑 Admin Panel</h2>
-        <div style="display: flex; gap: 10px; margin-top: 15px; flex-wrap: wrap;">
-            <button onclick="downloadBackup()" style="flex: 1; min-width: 150px; padding: 12px; background: #00d9ff; color: #1a1a2e; border: none; border-radius: 5px; cursor: pointer; font-weight: bold;">
-                💾 Stáhnout zálohu
-            </button>
-            <label style="flex: 1; min-width: 150px; padding: 12px; background: #7b2cbf; color: white; border-radius: 5px; cursor: pointer; font-weight: bold; text-align: center; display: block;">
-                📤 Nahrát zálohu
-                <input type="file" id="restoreFile" accept=".json" style="display: none;" onchange="restoreBackup(this)">
-            </label>
-            <button onclick="showBrokenLinks()" style="flex: 1; min-width: 150px; padding: 12px; background: #ff4444; color: white; border: none; border-radius: 5px; cursor: pointer; font-weight: bold;">
-                ⚠️ Nefunkční linky
-            </button>
-            <button onclick="showAdminManager()" style="flex: 1; min-width: 150px; padding: 12px; background: #ff9500; color: white; border: none; border-radius: 5px; cursor: pointer; font-weight: bold;">
-                👥 Správa adminů
-            </button>
+
+    ${adminPanelHTML}
+
+    <div id="historySection" class="${historyClass}">
+        <div id="loadingMsg" style="text-align: center; padding: 20px; ${loadingStyle}">
+            <p style="color: #00d9ff; font-size: 18px;">&#x23F3; Načítám vaši historii vyhledávání...</p>
         </div>
-        <p id="adminMessage" style="margin-top: 10px; display: none;"></p>
-        
-        <!-- Admin Management Panel -->
-        <div id="adminManagerPanel" style="display: none; margin-top: 20px; padding: 15px; background: #1a0d00; border: 2px solid #ff9500; border-radius: 8px;">
-            <h3 style="color: #ff9500; margin-top: 0;">👥 Správa adminů</h3>
-            <div id="adminsList" style="margin-bottom: 15px;"></div>
-            <div style="display: flex; gap: 10px; margin-top: 15px;">
-                <input type="text" id="newAdminUsername" placeholder="Uživatelské jméno" style="flex: 1; padding: 10px; background: #0d1b2a; color: white; border: 1px solid #ff9500; border-radius: 5px;">
-                <button onclick="addNewAdmin()" style="padding: 10px 20px; background: #00d9ff; color: #1a1a2e; border: none; border-radius: 5px; cursor: pointer; font-weight: bold;">
-                    ➕ Přidat admina
-                </button>
-            </div>
-            <p id="adminManagerMessage" style="margin-top: 10px; display: none;"></p>
-            <button onclick="hideAdminManager()" style="margin-top: 15px; padding: 8px 16px; background: #444; color: white; border: none; border-radius: 5px; cursor: pointer;">
-                Zavřít
-            </button>
-        </div>
-        
-        <!-- Broken Links Panel -->
-        <div id="brokenLinksPanel" style="display: none; margin-top: 20px; padding: 15px; background: #1a0d0d; border: 2px solid #ff4444; border-radius: 8px;">
-            <h3 style="color: #ff4444; margin-top: 0;">⚠️ Nefunkční manuální linky</h3>
-            <div id="brokenLinksList"></div>
-            <button onclick="hideBrokenLinks()" style="margin-top: 10px; padding: 8px 16px; background: #444; color: white; border: none; border-radius: 5px; cursor: pointer;">
-                Zavřít
-            </button>
-        </div>
-    </div>
-    
-    <div id="historySection" class="__HISTORY_CLASS__">
-        <div id="loadingMsg" style="text-align: center; padding: 20px; __LOADING_STYLE__">
-            <p style="color: #00d9ff; font-size: 18px;">⏳ Načítám vaši historii vyhledávání...</p>
-        </div>
-        <h2 style="display: none;" id="histTitle">📊 Vaše historie vyhledávání</h2>
+        <h2 style="display: none;" id="histTitle">&#x1F4CA; Vaše historie vyhledávání</h2>
         <p style="display: none;" id="histDesc">Zde vidíte co jste hledali a můžete přidat manuální linky.</p>
         <div id="searchHistory"></div>
     </div>
-    
+
     <script>
-        console.log('My Links JS loaded');
-        let currentUser = __USERNAME__;
-        let currentPassword = __PASSWORD__;
-        let currentIsAdmin = __IS_ADMIN__;
-        const tmdbApiKey = __TMDB_KEY__;
-        console.log('TMDB API key available:', !!tmdbApiKey);
-        console.log('Current user:', currentUser);
-        console.log('Is admin:', currentIsAdmin);
-        
-        // DEBUG: Test if JS is running
-        if (!currentUser) {
-            alert('ERROR: currentUser is empty! Value: ' + currentUser);
-        } else {
-            console.log('✅ currentUser is set:', currentUser);
-        }
-        
+        var currentUser = ${JSON.stringify(username || '')};
+        var currentPassword = ${JSON.stringify(password || '')};
+        var currentIsAdmin = ${isAdminUser};
+        var tmdbApiKey = ${JSON.stringify(tmdbApiKey || '')};
+
         // Auto-load historie pokud máme username z configu
         if (currentUser) {
-            console.log('Auto-loading history for:', currentUser);
-            setTimeout(() => loadHistory(currentUser), 100);
-        } else {
-            console.log('No username - skipping auto-load');
+            setTimeout(function() { loadHistory(currentUser); }, 100);
         }
-        
+
         async function loadHistory(username) {
-            console.log('loadHistory called for:', username);
             try {
-                console.log('Fetching history from API...');
-                const response = await fetch('/api/mylinks/history', {
+                var response = await fetch('/api/mylinks/history', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ username })
+                    body: JSON.stringify({ username: username })
                 });
-                
-                console.log('API response status:', response.status);
-                const data = await response.json();
-                console.log('API response data:', data);
-                
+                var data = await response.json();
+
                 if (data.error) {
-                    console.error('Error loading history:', data.error);
                     document.getElementById('historySection').classList.remove('hidden');
-                    const loadingMsg = document.getElementById('loadingMsg');
-                    if (loadingMsg) loadingMsg.style.display = 'none';
+                    hideLoading();
                     document.getElementById('searchHistory').innerHTML = '<p>Chyba načítání historie.</p>';
                 } else if (data.searches && Object.keys(data.searches).length > 0) {
                     showHistory(data.searches);
                 } else {
                     document.getElementById('historySection').classList.remove('hidden');
-                    const loadingMsg = document.getElementById('loadingMsg');
-                    if (loadingMsg) loadingMsg.style.display = 'none';
+                    hideLoading();
                     document.getElementById('searchHistory').innerHTML = '<p>Zatím jste nic nehledali přes addon.</p>';
                 }
             } catch (error) {
-                console.error('Failed to load history:', error);
                 document.getElementById('historySection').classList.remove('hidden');
-                const loadingMsg = document.getElementById('loadingMsg');
-                if (loadingMsg) loadingMsg.style.display = 'none';
-                document.getElementById('searchHistory').innerHTML = '<p>❌ Chyba připojení k serveru.</p>';
+                hideLoading();
+                document.getElementById('searchHistory').innerHTML = '<p>Chyba připojení k serveru.</p>';
             }
         }
-        
-        // Cookie helpers
+
+        function hideLoading() {
+            var el = document.getElementById('loadingMsg');
+            if (el) el.style.display = 'none';
+        }
+
         function setCookie(name, value, days) {
-            const expires = new Date();
+            var expires = new Date();
             expires.setTime(expires.getTime() + days * 24 * 60 * 60 * 1000);
             document.cookie = name + '=' + encodeURIComponent(value) + ';expires=' + expires.toUTCString() + ';path=/';
         }
-        
+
         function getCookie(name) {
-            const nameEQ = name + '=';
-            const ca = document.cookie.split(';');
-            for(let i = 0; i < ca.length; i++) {
-                let c = ca[i];
-                while (c.charAt(0) === ' ') c = c.substring(1, c.length);
-                if (c.indexOf(nameEQ) === 0) return decodeURIComponent(c.substring(nameEQ.length, c.length));
+            var nameEQ = name + '=';
+            var ca = document.cookie.split(';');
+            for (var i = 0; i < ca.length; i++) {
+                var c = ca[i].trim();
+                if (c.indexOf(nameEQ) === 0) return decodeURIComponent(c.substring(nameEQ.length));
             }
             return null;
         }
-        
-        // Auto-fill ze cookies při načtení stránky
-        window.onload = function() {
-            const savedUsername = getCookie('ws_username');
-            const savedPassword = getCookie('ws_password');
-            
-            if (savedUsername) {
-                document.getElementById('username').value = savedUsername;
+
+        // Auto-fill ze cookies
+        window.addEventListener('load', function() {
+            var savedUser = getCookie('ws_username');
+            var savedPass = getCookie('ws_password');
+            if (savedUser && document.getElementById('loginUsername')) {
+                document.getElementById('loginUsername').value = savedUser;
             }
-            if (savedPassword) {
-                document.getElementById('password').value = savedPassword;
+            if (savedPass && document.getElementById('loginPassword')) {
+                document.getElementById('loginPassword').value = savedPass;
             }
-            
-            // Auto-login pokud máme credentials
-            if (savedUsername && savedPassword) {
-                // Počkat chvíli než se stránka načte
-                setTimeout(() => {
-                    const autoLogin = confirm('Máte uložené přihlašovací údaje. Přihlásit automaticky?');
-                    if (autoLogin) {
-                        login();
+            if (savedUser && savedPass && !currentUser) {
+                setTimeout(function() {
+                    if (confirm('Máte uložené přihlašovací údaje. Přihlásit automaticky?')) {
+                        doLogin();
                     }
                 }, 500);
             }
-        };
-        
-        async function login() {
-            const username = document.getElementById('username').value.trim();
-            const password = document.getElementById('password').value.trim();
-            
+        });
+
+        async function doLogin() {
+            var usernameEl = document.getElementById('loginUsername');
+            var passwordEl = document.getElementById('loginPassword');
+            var username = usernameEl ? usernameEl.value.trim() : '';
+            var password = passwordEl ? passwordEl.value.trim() : '';
+
             if (!username || !password) {
-                showError('Vyplňte username a password!');
+                showLoginError('Vyplňte username a password!');
                 return;
             }
-            
+
             try {
-                const response = await fetch('/api/mylinks/history', {
+                var response = await fetch('/api/mylinks/history', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ username, password })
+                    body: JSON.stringify({ username: username, password: password })
                 });
-                
-                const data = await response.json();
-                
+                var data = await response.json();
+
                 if (data.error) {
-                    showError(data.error);
+                    showLoginError(data.error);
                     return;
                 }
-                
-                // Uložit do cookies (platnost 30 dní)
+
                 setCookie('ws_username', username, 30);
                 setCookie('ws_password', password, 30);
-                
+
                 currentUser = username;
+                currentPassword = password;
                 showHistory(data.searches);
-                
             } catch (error) {
-                showError('Chyba připojení: ' + error.message);
+                showLoginError('Chyba připojení: ' + error.message);
             }
         }
-        
-        function showError(msg) {
-            const errorEl = document.getElementById('loginError');
-            errorEl.textContent = msg;
-            errorEl.classList.remove('hidden');
+
+        function showLoginError(msg) {
+            var el = document.getElementById('loginError');
+            if (el) { el.textContent = msg; el.classList.remove('hidden'); }
         }
-        
+
         function showHistory(searches) {
-            // Skrýt loading a login
-            const loadingMsg = document.getElementById('loadingMsg');
-            if (loadingMsg) loadingMsg.style.display = 'none';
-            
+            hideLoading();
             document.getElementById('loginSection').style.display = 'none';
             document.getElementById('historySection').classList.remove('hidden');
-            
-            // Zobrazit nadpisy
-            const title = document.getElementById('histTitle');
-            const desc = document.getElementById('histDesc');
+
+            var title = document.getElementById('histTitle');
+            var desc = document.getElementById('histDesc');
             if (title) title.style.display = 'block';
             if (desc) desc.style.display = 'block';
-            
-            const historyDiv = document.getElementById('searchHistory');
-            
+
+            var historyDiv = document.getElementById('searchHistory');
+
             if (!searches || Object.keys(searches).length === 0) {
                 historyDiv.innerHTML = '<p>Zatím jste nic nehledali přes addon.</p>';
                 return;
             }
-            
-            // Načíst manuální linky
+
             fetch('/api/mylinks/manual')
-                .then(r => r.json())
-                .then(data => {
-                    const manualLinks = data.links || {};
-                    renderHistory(searches, manualLinks);
+                .then(function(r) { return r.json(); })
+                .then(function(data) {
+                    renderHistory(searches, data.links || {});
                 })
-                .catch(err => {
-                    console.error('Failed to load manual links:', err);
+                .catch(function() {
                     renderHistory(searches, {});
                 });
         }
-        
+
         function renderHistory(searches, manualLinks) {
-            const historyDiv = document.getElementById('searchHistory');
-            
-            // Seřadit podle posledního vyhledávání a vzít max 10
-            const sorted = Object.entries(searches)
-                .sort((a, b) => new Date(b[1].last_search) - new Date(a[1].last_search))
+            var historyDiv = document.getElementById('searchHistory');
+
+            var sorted = Object.entries(searches)
+                .sort(function(a, b) { return new Date(b[1].last_search) - new Date(a[1].last_search); })
                 .slice(0, 10);
-            
-            historyDiv.innerHTML = sorted.map(([query, stats]) => {
-                const manualLinksArray = manualLinks[query] || [];
-                const hasManualLinks = Array.isArray(manualLinksArray) && manualLinksArray.length > 0;
-                
-                // Extrahovat název a poster
-                let title = query;
-                let posterUrl = stats.poster || 'https://via.placeholder.com/60x90/667eea/ffffff?text=?';
-                
-                // IMDB/TMDB - odstranit tt prefix
-                if (query.match(/tt\\d+/)) {
-                    title = query.replace(/^tt\\d+:\\s*/, '');
+
+            historyDiv.innerHTML = sorted.map(function(entry) {
+                var query = entry[0];
+                var stats = entry[1];
+                var manualLinksArray = manualLinks[query] || [];
+                var hasManualLinks = Array.isArray(manualLinksArray) && manualLinksArray.length > 0;
+
+                var title = query;
+                var posterUrl = stats.poster || 'https://via.placeholder.com/60x90/667eea/ffffff?text=?';
+
+                if (query.match(/tt\\\\d+/)) {
+                    title = query.replace(/^tt\\\\d+:\\\\s*/, '');
                 }
-                
-                // Kitsu - odstranit kitsu prefix
                 if (query.includes('kitsu:')) {
-                    title = query.replace(/^kitsu:\\d+:\\s*/, '');
+                    title = query.replace(/^kitsu:\\\\d+:\\\\s*/, '');
                 }
-                
-                // Renderovat všechny manuální linky
-                const manualLinksHtml = hasManualLinks ? manualLinksArray.map((manual, idx) => {
-                    const isBroken = manual.status === 'broken';
-                    const isAdmin = currentIsAdmin;
-                    const isOwner = currentUser === manual.added_by;
-                    
-                    // Přeskočit broken linky pro ostatní (ne vlastníka, ne admina)
-                    if (isBroken && !isOwner && !isAdmin) return '';
-                    
-                    const bgColor = isBroken ? '#2d1b1b' : '#0d1b2a';
-                    const borderStyle = isBroken ? '2px solid #ff4444' : 'none';
-                    const textColor = isBroken ? '#ff4444' : '#00d9ff';
-                    const linkType = isBroken ? '⚠️ NEFUNKČNÍ LINK' : '📌 Manuální link';
-                    const dateInfo = new Date(manual.added_at).toLocaleDateString('cs-CZ');
-                    const brokenInfo = isBroken ? ' • <span style="color: #ff4444;">Nefunguje od: ' + new Date(manual.last_checked).toLocaleDateString('cs-CZ') + '</span>' : '';
-                    const deleteButton = (isOwner || isAdmin) ? 
-                        '<button onclick="deleteLink(\\'' + query.replace(/'/g, "\\\\'") + '\\', ' + idx + ', \\'' + encodeURIComponent(query) + '\\')" ' +
-                        'style="position: absolute; top: 10px; right: 10px; padding: 5px 10px; background: #ff4444; color: white; border: none; border-radius: 3px; cursor: pointer; font-size: 12px;">' +
-                        '🗑️ Smazat</button>' : '';
-                    
-                    return '<div style="background: ' + bgColor + '; padding: 10px; margin-top: 10px; border-radius: 5px; position: relative; border: ' + borderStyle + ';">' +
-                        '<strong style="color: ' + textColor + ';">' + linkType + ':</strong> ' + manual.display_name + '<br>' +
-                        '<small style="color: #999;">Přidal: ' + manual.added_by + ' • ' + dateInfo + brokenInfo + '</small>' +
-                        deleteButton +
-                        '</div>';
-                }).filter(Boolean).join('') : '';
-                
-                return '<div class="search-item" style="display: flex; gap: 15px; align-items: start;">' +
-                    '<img src="' + posterUrl + '" ' +
-                         'alt="Poster" ' +
-                         'style="width: 60px; height: 90px; object-fit: cover; border-radius: 8px; flex-shrink: 0; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);" ' +
-                         'onerror="this.style.display=\'none\'; this.nextElementSibling.style.display=\'flex\';">' +
-                    '<div style="width: 60px; height: 90px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 8px; display: none; align-items: center; justify-content: center; font-size: 32px; flex-shrink: 0;">' +
-                        '🎬' +
-                    '</div>' +
-                    '<div style="flex: 1;">' +
+
+                var manualLinksHtml = '';
+                if (hasManualLinks) {
+                    manualLinksHtml = manualLinksArray.map(function(manual, idx) {
+                        var isBroken = manual.status === 'broken';
+                        var isOwner = currentUser === manual.added_by;
+                        if (isBroken && !isOwner && !currentIsAdmin) return '';
+
+                        var bgColor = isBroken ? '#2d1b1b' : '#0d1b2a';
+                        var borderSt = isBroken ? '2px solid #ff4444' : 'none';
+                        var textCol = isBroken ? '#ff4444' : '#00d9ff';
+                        var linkType = isBroken ? '\\u26A0\\uFE0F NEFUNKČNÍ LINK' : '\\uD83D\\uDCCC Manuální link';
+                        var dateInfo = new Date(manual.added_at).toLocaleDateString('cs-CZ');
+                        var brokenInfo = isBroken ? ' &bull; <span style="color:#ff4444;">Nefunguje od: ' + new Date(manual.last_checked).toLocaleDateString('cs-CZ') + '</span>' : '';
+
+                        var eQuery = encodeURIComponent(query);
+                        var delBtn = (isOwner || currentIsAdmin) ?
+                            '<button onclick="deleteLink(decodeURIComponent(\\'' + eQuery + '\\'), ' + idx + ', \\'' + eQuery + '\\')" style="position:absolute;top:10px;right:10px;padding:5px 10px;background:#ff4444;color:white;border:none;border-radius:3px;cursor:pointer;font-size:12px;">\\uD83D\\uDDD1\\uFE0F Smazat</button>' : '';
+
+                        return '<div style="background:' + bgColor + ';padding:10px;margin-top:10px;border-radius:5px;position:relative;border:' + borderSt + ';">' +
+                            '<strong style="color:' + textCol + ';">' + linkType + ':</strong> ' + (manual.display_name || '') + '<br>' +
+                            '<small style="color:#999;">Přidal: ' + (manual.added_by || '') + ' &bull; ' + dateInfo + brokenInfo + '</small>' +
+                            delBtn + '</div>';
+                    }).filter(Boolean).join('');
+                }
+
+                var eQ = encodeURIComponent(query);
+                return '<div class="search-item" style="display:flex;gap:15px;align-items:start;">' +
+                    '<img src="' + posterUrl + '" alt="Poster" style="width:60px;height:90px;object-fit:cover;border-radius:8px;flex-shrink:0;background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);" onerror="this.style.display=\\'none\\';this.nextElementSibling.style.display=\\'flex\\';">' +
+                    '<div style="width:60px;height:90px;background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);border-radius:8px;display:none;align-items:center;justify-content:center;font-size:32px;flex-shrink:0;">\\uD83C\\uDFAC</div>' +
+                    '<div style="flex:1;">' +
                         '<div class="search-query">' + title + '</div>' +
                         '<div class="search-stats">' +
-                            '🔍 Hledáno: ' + stats.count + 'x | ' +
-                            '📦 Nalezeno: ' + stats.results_count + ' souborů | ' +
-                            '🕒 Naposledy: ' + new Date(stats.last_search).toLocaleString('cs-CZ') +
+                            '\\uD83D\\uDD0D Hledáno: ' + stats.count + 'x | ' +
+                            '\\uD83D\\uDCE6 Nalezeno: ' + stats.results_count + ' souborů | ' +
+                            '\\uD83D\\uDD52 Naposledy: ' + new Date(stats.last_search).toLocaleString('cs-CZ') +
                         '</div>' +
                         manualLinksHtml +
                         '<div class="add-link-form">' +
-                            '<input type="text" id="name_' + encodeURIComponent(query) + '" placeholder="Název (např. \'Frieren EP1 CZ 1080p\')" style="width: 100%; margin-bottom: 5px; padding: 8px; box-sizing: border-box;">' +
-                            '<input type="text" id="link_' + encodeURIComponent(query) + '" placeholder="Webshare URL nebo ident" style="width: 70%; display: inline-block; padding: 8px;">' +
-                            '<button onclick="addLink(\'' + query.replace(/'/g, "\\'") + '\', \'' + encodeURIComponent(query) + '\')" style="width: 28%; display: inline-block; padding: 8px;">Přidat</button>' +
-                            '<p id="msg_' + encodeURIComponent(query) + '" class="hidden"></p>' +
+                            '<input type="text" id="name_' + eQ + '" placeholder="Název (např. Frieren EP1 CZ 1080p)" style="width:100%;margin-bottom:5px;padding:8px;box-sizing:border-box;">' +
+                            '<input type="text" id="link_' + eQ + '" placeholder="Webshare URL nebo ident" style="width:70%;display:inline-block;padding:8px;">' +
+                            '<button onclick="addLink(decodeURIComponent(\\'' + eQ + '\\'), \\'' + eQ + '\\')" style="width:28%;display:inline-block;padding:8px;">Přidat</button>' +
+                            '<p id="msg_' + eQ + '" class="hidden"></p>' +
                         '</div>' +
                     '</div>' +
                 '</div>';
             }).join('');
         }
-        
+
         async function addLink(query, encodedQuery) {
-            const nameInput = document.getElementById('name_' + encodedQuery);
-            const linkInput = document.getElementById('link_' + encodedQuery);
-            const name = nameInput.value.trim();
-            const link = linkInput.value.trim();
-            
-            if (!link) {
-                showMessage(encodedQuery, 'Zadejte Webshare ident nebo URL!', 'error');
-                return;
-            }
-            
-            if (!name) {
-                showMessage(encodedQuery, 'Zadejte název pro link!', 'error');
-                return;
-            }
-            
+            var nameInput = document.getElementById('name_' + encodedQuery);
+            var linkInput = document.getElementById('link_' + encodedQuery);
+            var name = nameInput ? nameInput.value.trim() : '';
+            var link = linkInput ? linkInput.value.trim() : '';
+
+            if (!link) { showMessage(encodedQuery, 'Zadejte Webshare ident nebo URL!', 'error'); return; }
+            if (!name) { showMessage(encodedQuery, 'Zadejte název pro link!', 'error'); return; }
+
             try {
-                showMessage(encodedQuery, '⏳ Kontroluji link...', 'info');
-                
-                const response = await fetch('/api/mylinks/add', {
+                showMessage(encodedQuery, 'Kontroluji link...', 'info');
+                var response = await fetch('/api/mylinks/add', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ 
+                    body: JSON.stringify({
                         username: currentUser,
                         password: currentPassword,
                         query: query,
@@ -3417,355 +3342,231 @@ app.get('/mylinks', async (req, res) => {
                         display_name: name
                     })
                 });
-                
-                const data = await response.json();
-                
+                var data = await response.json();
                 if (data.success) {
-                    showMessage(encodedQuery, '✅ Link přidán! Všichni uživatelé ho teď uvidí.', 'success');
-                    linkInput.value = '';
-                    nameInput.value = '';
+                    showMessage(encodedQuery, 'Link přidán! Všichni uživatelé ho teď uvidí.', 'success');
+                    if (linkInput) linkInput.value = '';
+                    if (nameInput) nameInput.value = '';
+                    setTimeout(function() { location.reload(); }, 1500);
                 } else {
-                    showMessage(encodedQuery, '❌ ' + data.error, 'error');
+                    showMessage(encodedQuery, data.error || 'Chyba', 'error');
                 }
-                
             } catch (error) {
-                showMessage(encodedQuery, '❌ Chyba: ' + error.message, 'error');
+                showMessage(encodedQuery, 'Chyba: ' + error.message, 'error');
             }
         }
-        
+
         async function deleteLink(query, linkIndex, encodedQuery) {
-            if (!confirm('Opravdu chcete smazat tento manuální link?')) {
-                return;
-            }
-            
+            if (!confirm('Opravdu chcete smazat tento manuální link?')) return;
             try {
-                const response = await fetch('/api/mylinks/delete', {
+                var response = await fetch('/api/mylinks/delete', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ 
+                    body: JSON.stringify({
                         username: currentUser,
                         query: query,
                         link_index: linkIndex
                     })
                 });
-                
-                const data = await response.json();
-                
+                var data = await response.json();
                 if (data.success) {
-                    showMessage(encodedQuery, '✅ Link smazán. Obnovte stránku pro aktualizaci.', 'success');
-                    // Refresh po 1 sekundě
-                    setTimeout(() => location.reload(), 1000);
+                    showMessage(encodedQuery, 'Link smazán.', 'success');
+                    setTimeout(function() { location.reload(); }, 1000);
                 } else {
-                    showMessage(encodedQuery, '❌ ' + (data.error || 'Chyba'), 'error');
+                    showMessage(encodedQuery, data.error || 'Chyba', 'error');
                 }
-                
             } catch (error) {
-                showMessage(encodedQuery, '❌ Chyba: ' + error.message, 'error');
+                showMessage(encodedQuery, 'Chyba: ' + error.message, 'error');
             }
         }
-        
-        // Admin funkce - stáhnout zálohu
+
         async function downloadBackup() {
             try {
-                const response = await fetch('/api/mylinks/backup', {
+                var response = await fetch('/api/mylinks/backup', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ username: currentUser })
                 });
-                
-                const data = await response.json();
-                
+                var data = await response.json();
                 if (data.success && data.backup) {
-                    // Vytvořit JSON soubor a stáhnout
-                    const blob = new Blob([JSON.stringify(data.backup, null, 2)], { type: 'application/json' });
-                    const url = URL.createObjectURL(blob);
-                    const a = document.createElement('a');
+                    var blob = new Blob([JSON.stringify(data.backup, null, 2)], { type: 'application/json' });
+                    var url = URL.createObjectURL(blob);
+                    var a = document.createElement('a');
                     a.href = url;
                     a.download = 'webshare-addon-backup-' + new Date().toISOString().split('T')[0] + '.json';
                     a.click();
                     URL.revokeObjectURL(url);
-                    
-                    showAdminMessage('✅ Záloha stažena', 'success');
+                    showAdminMsg('Záloha stažena', 'success');
                 } else {
-                    showAdminMessage('❌ ' + (data.error || 'Chyba'), 'error');
+                    showAdminMsg(data.error || 'Chyba', 'error');
                 }
             } catch (error) {
-                showAdminMessage('❌ Chyba: ' + error.message, 'error');
+                showAdminMsg('Chyba: ' + error.message, 'error');
             }
         }
-        
-        // Admin funkce - nahrát zálohu
+
         async function restoreBackup(input) {
-            const file = input.files[0];
+            var file = input.files[0];
             if (!file) return;
-            
             if (!confirm('VAROVÁNÍ: Tato akce přepíše všechny manuální linky! Pokračovat?')) {
                 input.value = '';
                 return;
             }
-            
             try {
-                const text = await file.text();
-                const backup = JSON.parse(text);
-                
-                const response = await fetch('/api/mylinks/restore', {
+                var text = await file.text();
+                var backup = JSON.parse(text);
+                var response = await fetch('/api/mylinks/restore', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ 
-                        username: currentUser,
-                        backup: backup
-                    })
+                    body: JSON.stringify({ username: currentUser, backup: backup })
                 });
-                
-                const data = await response.json();
-                
+                var data = await response.json();
                 if (data.success) {
-                    showAdminMessage('✅ Záloha obnovena (' + data.restored + ' linků). Obnovte stránku.', 'success');
-                    setTimeout(() => location.reload(), 2000);
+                    showAdminMsg('Záloha obnovena (' + data.restored + ' linků). Stránka se obnoví.', 'success');
+                    setTimeout(function() { location.reload(); }, 2000);
                 } else {
-                    showAdminMessage('❌ ' + (data.error || 'Chyba'), 'error');
+                    showAdminMsg(data.error || 'Chyba', 'error');
                 }
             } catch (error) {
-                showAdminMessage('❌ Chyba: ' + error.message, 'error');
+                showAdminMsg('Chyba: ' + error.message, 'error');
             }
-            
             input.value = '';
         }
-        
-        function showAdminMessage(msg, type) {
-            const msgEl = document.getElementById('adminMessage');
-            if (msgEl) {
-                msgEl.textContent = msg;
-                msgEl.style.display = 'block';
-                msgEl.style.color = type === 'success' ? '#00ff00' : '#ff0000';
+
+        function showAdminMsg(msg, type) {
+            var el = document.getElementById('adminMessage');
+            if (el) {
+                el.textContent = msg;
+                el.style.display = 'block';
+                el.style.color = type === 'success' ? '#00ff00' : '#ff0000';
             }
         }
-        
-        // Admin - zobrazit všechny broken linky
+
         async function showBrokenLinks() {
             try {
-                const response = await fetch('/api/mylinks/manual');
-                const data = await response.json();
-                const manualLinks = data.links || {};
-                
-                // Najít všechny broken linky
-                const brokenLinks = [];
-                for (const [query, linksArray] of Object.entries(manualLinks)) {
-                    if (Array.isArray(linksArray)) {
-                        linksArray.forEach((link, idx) => {
+                var response = await fetch('/api/mylinks/manual');
+                var data = await response.json();
+                var links = data.links || {};
+                var brokenLinks = [];
+                for (var q in links) {
+                    if (Array.isArray(links[q])) {
+                        links[q].forEach(function(link, idx) {
                             if (link.status === 'broken') {
-                                brokenLinks.push({
-                                    query,
-                                    idx,
-                                    link
-                                });
+                                brokenLinks.push({ query: q, idx: idx, link: link });
                             }
                         });
                     }
                 }
-                
-                const panel = document.getElementById('brokenLinksPanel');
-                const list = document.getElementById('brokenLinksList');
-                
+                var list = document.getElementById('brokenLinksList');
                 if (brokenLinks.length === 0) {
-                    list.innerHTML = '<p style="color: #00ff00;">✅ Žádné nefunkční linky!</p>';
+                    list.innerHTML = '<p style="color:#00ff00;">Žádné nefunkční linky!</p>';
                 } else {
-                    list.innerHTML = brokenLinks.map(item => 
-                        '<div style="background: #0d1b2a; padding: 10px; margin: 10px 0; border-radius: 5px; border-left: 4px solid #ff4444;">' +
-                            '<strong style="color: #fff;">' + item.query + '</strong><br>' +
-                            '<span style="color: #00d9ff;">' + item.link.display_name + '</span><br>' +
-                            '<small style="color: #999;">' +
-                                'Přidal: ' + item.link.added_by + ' • ' +
-                                'Selhalo: ' + new Date(item.link.last_checked).toLocaleString('cs-CZ') + ' • ' +
-                                'Počet selhání: ' + (item.link.fail_count || 1) +
-                            '</small>' +
-                            '<button onclick="deleteLink(\'' + item.query.replace(/'/g, "\\'") + '\', ' + item.idx + ', \'' + encodeURIComponent(item.query) + '\')" ' +
-                                    'style="margin-top: 5px; padding: 5px 10px; background: #ff4444; color: white; border: none; border-radius: 3px; cursor: pointer;">' +
-                                '🗑️ Smazat' +
-                            '</button>' +
-                        '</div>'
-                    ).join('');
+                    list.innerHTML = brokenLinks.map(function(item) {
+                        var eQ = encodeURIComponent(item.query);
+                        return '<div style="background:#0d1b2a;padding:10px;margin:10px 0;border-radius:5px;border-left:4px solid #ff4444;">' +
+                            '<strong style="color:#fff;">' + item.query + '</strong><br>' +
+                            '<span style="color:#00d9ff;">' + item.link.display_name + '</span><br>' +
+                            '<small style="color:#999;">Přidal: ' + item.link.added_by + ' &bull; Selhalo: ' + new Date(item.link.last_checked).toLocaleString('cs-CZ') + ' &bull; Počet selhání: ' + (item.link.fail_count || 1) + '</small>' +
+                            '<br><button onclick="deleteLink(decodeURIComponent(\\'' + eQ + '\\'), ' + item.idx + ', \\'' + eQ + '\\')" style="margin-top:5px;padding:5px 10px;background:#ff4444;color:white;border:none;border-radius:3px;cursor:pointer;">Smazat</button>' +
+                            '</div>';
+                    }).join('');
                 }
-                
-                panel.style.display = 'block';
+                document.getElementById('brokenLinksPanel').style.display = 'block';
             } catch (error) {
-                showAdminMessage('Chyba načítání: ' + error.message, 'error');
+                showAdminMsg('Chyba načítání: ' + error.message, 'error');
             }
         }
-        
+
         function hideBrokenLinks() {
             document.getElementById('brokenLinksPanel').style.display = 'none';
         }
-        
-        // Admin Manager funkce
+
         async function showAdminManager() {
             try {
-                const response = await fetch('/api/admins/list');
-                const data = await response.json();
-                const admins = data.admins || [];
-                
-                const list = document.getElementById('adminsList');
-                list.innerHTML = '<h4 style="color: #fff; margin: 10px 0;">Současní admini:</h4>' + 
-                    admins.map(admin => {
-                        const isSuperAdmin = admin === 'Procha';
-                        const crown = isSuperAdmin ? '👑 ' : '';
-                        const removeBtn = !isSuperAdmin ? 
-                            '<button onclick="removeExistingAdmin(\'' + admin + '\')" style="padding: 5px 10px; background: #ff4444; color: white; border: none; border-radius: 3px; cursor: pointer;">❌ Odebrat</button>' :
-                            '<span style="color: #ff9500;">Super Admin (nelze odebrat)</span>';
-                        
-                        return '<div style="background: #0d1b2a; padding: 10px; margin: 5px 0; border-radius: 5px; display: flex; justify-content: space-between; align-items: center;">' +
-                            '<span style="color: #00d9ff; font-weight: bold;">' + crown + admin + '</span>' +
-                            removeBtn +
-                            '</div>';
+                var response = await fetch('/api/admins/list');
+                var data = await response.json();
+                var admins = data.admins || [];
+                var list = document.getElementById('adminsList');
+                list.innerHTML = '<h4 style="color:#fff;margin:10px 0;">Současní admini:</h4>' +
+                    admins.map(function(admin) {
+                        var isSuperAdmin = admin === 'Procha';
+                        var crown = isSuperAdmin ? '\\uD83D\\uDC51 ' : '';
+                        var removeBtn = !isSuperAdmin ?
+                            '<button onclick="removeExistingAdmin(\\'' + admin + '\\')" style="padding:5px 10px;background:#ff4444;color:white;border:none;border-radius:3px;cursor:pointer;">Odebrat</button>' :
+                            '<span style="color:#ff9500;">Super Admin (nelze odebrat)</span>';
+                        return '<div style="background:#0d1b2a;padding:10px;margin:5px 0;border-radius:5px;display:flex;justify-content:space-between;align-items:center;">' +
+                            '<span style="color:#00d9ff;font-weight:bold;">' + crown + admin + '</span>' + removeBtn + '</div>';
                     }).join('');
-                
                 document.getElementById('adminManagerPanel').style.display = 'block';
             } catch (error) {
-                showAdminMessage('Chyba načítání adminů: ' + error.message, 'error');
+                showAdminMsg('Chyba načítání adminů: ' + error.message, 'error');
             }
         }
-        
+
         function hideAdminManager() {
             document.getElementById('adminManagerPanel').style.display = 'none';
         }
-        
+
         async function addNewAdmin() {
-            const input = document.getElementById('newAdminUsername');
-            const username = input.value.trim();
-            
-            if (!username) {
-                showAdminManagerMessage('Zadej uživatelské jméno', 'error');
-                return;
-            }
-            
+            var input = document.getElementById('newAdminUsername');
+            var username = input ? input.value.trim() : '';
+            if (!username) { showAdminMgrMsg('Zadej uživatelské jméno', 'error'); return; }
             try {
-                const response = await fetch('/api/admins/add', {
+                var response = await fetch('/api/admins/add', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ username, added_by: currentUser })
+                    body: JSON.stringify({ username: username, added_by: currentUser })
                 });
-                
-                const data = await response.json();
-                
+                var data = await response.json();
                 if (data.success) {
-                    showAdminManagerMessage('✅ ' + username + ' je nyní admin', 'success');
+                    showAdminMgrMsg(username + ' je nyní admin', 'success');
                     input.value = '';
-                    // Refresh seznamu
-                    setTimeout(() => showAdminManager(), 1000);
+                    setTimeout(showAdminManager, 1000);
                 } else {
-                    showAdminManagerMessage('❌ ' + data.error, 'error');
+                    showAdminMgrMsg(data.error, 'error');
                 }
             } catch (error) {
-                showAdminManagerMessage('❌ Chyba: ' + error.message, 'error');
+                showAdminMgrMsg('Chyba: ' + error.message, 'error');
             }
         }
-        
+
         async function removeExistingAdmin(username) {
-            if (!confirm('Opravdu odebrat admin práva uživateli ' + username + '?')) {
-                return;
-            }
-            
+            if (!confirm('Opravdu odebrat admin práva uživateli ' + username + '?')) return;
             try {
-                const response = await fetch('/api/admins/remove', {
+                var response = await fetch('/api/admins/remove', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ username, removed_by: currentUser })
+                    body: JSON.stringify({ username: username, removed_by: currentUser })
                 });
-                
-                const data = await response.json();
-                
+                var data = await response.json();
                 if (data.success) {
-                    showAdminManagerMessage('✅ ' + username + ' už není admin', 'success');
-                    // Refresh seznamu
-                    setTimeout(() => showAdminManager(), 1000);
+                    showAdminMgrMsg(username + ' už není admin', 'success');
+                    setTimeout(showAdminManager, 1000);
                 } else {
-                    showAdminManagerMessage('❌ ' + data.error, 'error');
+                    showAdminMgrMsg(data.error, 'error');
                 }
             } catch (error) {
-                showAdminManagerMessage('❌ Chyba: ' + error.message, 'error');
+                showAdminMgrMsg('Chyba: ' + error.message, 'error');
             }
         }
-        
-        function showAdminManagerMessage(msg, type) {
-            const msgEl = document.getElementById('adminManagerMessage');
-            if (msgEl) {
-                msgEl.textContent = msg;
-                msgEl.style.display = 'block';
-                msgEl.style.color = type === 'success' ? '#00ff00' : '#ff0000';
+
+        function showAdminMgrMsg(msg, type) {
+            var el = document.getElementById('adminManagerMessage');
+            if (el) {
+                el.textContent = msg;
+                el.style.display = 'block';
+                el.style.color = type === 'success' ? '#00ff00' : '#ff0000';
             }
         }
-        
+
         function showMessage(encodedQuery, msg, type) {
-            const msgEl = document.getElementById('msg_' + encodedQuery);
-            msgEl.textContent = msg;
-            msgEl.className = type;
+            var el = document.getElementById('msg_' + encodedQuery);
+            if (el) { el.textContent = msg; el.className = type; }
         }
     </script>
 </body>
-</html>
-    `;
-    
-    // Build admin panel HTML if user is admin
-    const adminPanelHTML = (username === 'Procha') ? `
-    <div style="background: #2d1b00; border: 2px solid #ff9500; border-radius: 10px; padding: 20px; margin: 20px 0;">
-        <h2 style="color: #ff9500; margin-top: 0;">👑 Admin Panel</h2>
-        <div style="display: flex; gap: 10px; margin-top: 15px; flex-wrap: wrap;">
-            <button onclick="downloadBackup()" style="flex: 1; min-width: 150px; padding: 12px; background: #00d9ff; color: #1a1a2e; border: none; border-radius: 5px; cursor: pointer; font-weight: bold;">
-                💾 Stáhnout zálohu
-            </button>
-            <label style="flex: 1; min-width: 150px; padding: 12px; background: #7b2cbf; color: white; border-radius: 5px; cursor: pointer; font-weight: bold; text-align: center; display: block;">
-                📤 Nahrát zálohu
-                <input type="file" id="restoreFile" accept=".json" style="display: none;" onchange="restoreBackup(this)">
-            </label>
-            <button onclick="showBrokenLinks()" style="flex: 1; min-width: 150px; padding: 12px; background: #ff4444; color: white; border: none; border-radius: 5px; cursor: pointer; font-weight: bold;">
-                ⚠️ Nefunkční linky
-            </button>
-            <button onclick="showAdminManager()" style="flex: 1; min-width: 150px; padding: 12px; background: #ff9500; color: white; border: none; border-radius: 5px; cursor: pointer; font-weight: bold;">
-                👥 Správa adminů
-            </button>
-        </div>
-        <p id="adminMessage" style="margin-top: 10px; display: none;"></p>
-        
-        <!-- Admin Management Panel -->
-        <div id="adminManagerPanel" style="display: none; margin-top: 20px; padding: 15px; background: #1a0d00; border: 2px solid #ff9500; border-radius: 8px;">
-            <h3 style="color: #ff9500; margin-top: 0;">👥 Správa adminů</h3>
-            <div id="adminsList" style="margin-bottom: 15px;"></div>
-            <div style="display: flex; gap: 10px; margin-top: 15px;">
-                <input type="text" id="newAdminUsername" placeholder="Uživatelské jméno" style="flex: 1; padding: 10px; background: #0d1b2a; color: white; border: 1px solid #ff9500; border-radius: 5px;">
-                <button onclick="addNewAdmin()" style="padding: 10px 20px; background: #00d9ff; color: #1a1a2e; border: none; border-radius: 5px; cursor: pointer; font-weight: bold;">
-                    ➕ Přidat admina
-                </button>
-            </div>
-            <p id="adminManagerMessage" style="margin-top: 10px; display: none;"></p>
-            <button onclick="hideAdminManager()" style="margin-top: 15px; padding: 8px 16px; background: #444; color: white; border: none; border-radius: 5px; cursor: pointer;">
-                Zavřít
-            </button>
-        </div>
-        
-        <!-- Broken Links Panel -->
-        <div id="brokenLinksPanel" style="display: none; margin-top: 20px; padding: 15px; background: #1a0d0d; border: 2px solid #ff4444; border-radius: 8px;">
-            <h3 style="color: #ff4444; margin-top: 0;">⚠️ Nefunkční manuální linky</h3>
-            <div id="brokenLinksList"></div>
-            <button onclick="hideBrokenLinks()" style="margin-top: 10px; padding: 8px 16px; background: #444; color: white; border: none; border-radius: 5px; cursor: pointer;">
-                Zavřít
-            </button>
-        </div>
-    </div>
-    ` : '';
-    
-    // Replace placeholders with actual values (using regex with global flag)
-    htmlPage = htmlPage
-        .replace(/__USERNAME__/g, JSON.stringify(username || ''))
-        .replace(/__PASSWORD__/g, JSON.stringify(password || ''))
-        .replace(/__IS_ADMIN__/g, (username === 'Procha').toString())
-        .replace(/__TMDB_KEY__/g, JSON.stringify(tmdbApiKey || ''))
-        .replace(/__ADMIN_PANEL__/g, adminPanelHTML)
-        .replace(/__HISTORY_CLASS__/g, username ? '' : 'hidden')
-        .replace(/__LOADING_STYLE__/g, username ? '' : 'display: none;');
-    
-    console.log('Replaced username:', JSON.stringify(username));
-    console.log('Replaced password:', password ? 'present' : 'missing');
-    
+</html>`;
+
     res.send(htmlPage);
 });
 
@@ -3898,7 +3699,7 @@ app.post('/api/mylinks/backup', async (req, res) => {
     try {
         const { username } = req.body;
         
-        if (!isAdmin(username)) {
+        if (!await isAdmin(username)) {
             return res.json({ error: 'Admin only', success: false });
         }
         
