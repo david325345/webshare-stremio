@@ -369,7 +369,7 @@ async function restoreBackup(backupData, restoredBy) {
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '7.16.9', // Debug: Add logging to check placeholder replacement
+    version: '7.16.10', // Debug: Check for unreplaced placeholders, use global regex replace
     name: 'Webshare Anime',
     description: 'Anime a filmy z Webshare.cz s vyhledáváním',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -3699,15 +3699,20 @@ app.get('/mylinks', async (req, res) => {
 </html>
     `;
     
-    // Replace placeholders with actual values
+    // Replace placeholders with actual values (using regex with global flag)
     htmlPage = htmlPage
-        .replace('__USERNAME__', JSON.stringify(username))
-        .replace('__PASSWORD__', JSON.stringify(password))
-        .replace('__IS_ADMIN__', username === 'Procha')
-        .replace('__TMDB_KEY__', JSON.stringify(tmdbApiKey));
+        .replace(/__USERNAME__/g, JSON.stringify(username || ''))
+        .replace(/__PASSWORD__/g, JSON.stringify(password || ''))
+        .replace(/__IS_ADMIN__/g, (username === 'Procha').toString())
+        .replace(/__TMDB_KEY__/g, JSON.stringify(tmdbApiKey || ''));
     
     console.log('Replaced username:', JSON.stringify(username));
     console.log('Replaced password:', password ? 'present' : 'missing');
+    console.log('Checking for unreplaced placeholders...');
+    if (htmlPage.includes('__USERNAME__')) console.warn('WARNING: __USERNAME__ not replaced!');
+    if (htmlPage.includes('__PASSWORD__')) console.warn('WARNING: __PASSWORD__ not replaced!');
+    if (htmlPage.includes('__IS_ADMIN__')) console.warn('WARNING: __IS_ADMIN__ not replaced!');
+    if (htmlPage.includes('__TMDB_KEY__')) console.warn('WARNING: __TMDB_KEY__ not replaced!');
     
     res.send(htmlPage);
 });
