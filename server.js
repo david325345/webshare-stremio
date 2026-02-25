@@ -202,7 +202,10 @@ async function addManualLink(query, webshareIdent, addedBy, displayName, poster)
             added_by: addedBy,
             added_at: new Date().toISOString(),
             display_name: displayName || query,
-            poster: poster || null
+            poster: poster || null,
+            status: 'ok', // 'ok' nebo 'broken'
+            last_checked: new Date().toISOString(),
+            fail_count: 0
         });
         
         await putToR2('manual-links.json', manualLinks);
@@ -210,6 +213,32 @@ async function addManualLink(query, webshareIdent, addedBy, displayName, poster)
         return true;
     } catch (error) {
         console.error('Failed to add manual link:', error.message);
+        return false;
+    }
+}
+
+async function markLinkAsBroken(query, linkIndex) {
+    try {
+        const manualLinks = await getManualLinks();
+        
+        if (!manualLinks[query] || !Array.isArray(manualLinks[query])) {
+            return false;
+        }
+        
+        if (linkIndex >= manualLinks[query].length) {
+            return false;
+        }
+        
+        const link = manualLinks[query][linkIndex];
+        link.status = 'broken';
+        link.last_checked = new Date().toISOString();
+        link.fail_count = (link.fail_count || 0) + 1;
+        
+        await putToR2('manual-links.json', manualLinks);
+        console.log(`⚠️ Manual link marked as broken: "${query}" [${linkIndex}] - ${link.display_name}`);
+        return true;
+    } catch (error) {
+        console.error('Failed to mark link as broken:', error.message);
         return false;
     }
 }
@@ -292,7 +321,7 @@ async function restoreBackup(backupData, restoredBy) {
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '7.14.0', // MAJOR: Validate manual links before adding - check if file exists and is downloadable
+    version: '7.15.1', // Admin broken links panel, owners see warnings instead of hidden
     name: 'Webshare Anime',
     description: 'Anime a filmy z Webshare.cz s vyhledáváním',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -1322,7 +1351,8 @@ async function handleStreamRequest(args) {
                         console.log(`[Manual ${i}] Fetching file info...`);
                         const fileInfo = await getFileInfo(manual.webshare_ident, token);
                         if (!fileInfo) {
-                            console.log(`[Manual ${i}] ❌ No file info returned`);
+                            console.log(`[Manual ${i}] ❌ No file info returned - marking as broken`);
+                            await markLinkAsBroken(queryKey, i);
                             return null;
                         }
                         console.log(`[Manual ${i}] ✅ File info:`, fileInfo.name);
@@ -1330,7 +1360,8 @@ async function handleStreamRequest(args) {
                         console.log(`[Manual ${i}] Fetching link...`);
                         const link = await getFileLink(manual.webshare_ident, token);
                         if (!link) {
-                            console.log(`[Manual ${i}] ❌ No link returned`);
+                            console.log(`[Manual ${i}] ❌ No link returned - marking as broken`);
+                            await markLinkAsBroken(queryKey, i);
                             return null;
                         }
                         console.log(`[Manual ${i}] ✅ Link obtained`);
@@ -2982,8 +3013,20 @@ app.get('/mylinks', async (req, res) => {
                 📤 Nahrát zálohu
                 <input type="file" id="restoreFile" accept=".json" style="display: none;" onchange="restoreBackup(this)">
             </label>
+            <button onclick="showBrokenLinks()" style="flex: 1; padding: 12px; background: #ff4444; color: white; border: none; border-radius: 5px; cursor: pointer; font-weight: bold;">
+                ⚠️ Nefunkční linky
+            </button>
         </div>
         <p id="adminMessage" style="margin-top: 10px; display: none;"></p>
+        
+        <!-- Broken Links Panel -->
+        <div id="brokenLinksPanel" style="display: none; margin-top: 20px; padding: 15px; background: #1a0d0d; border: 2px solid #ff4444; border-radius: 8px;">
+            <h3 style="color: #ff4444; margin-top: 0;">⚠️ Nefunkční manuální linky</h3>
+            <div id="brokenLinksList"></div>
+            <button onclick="hideBrokenLinks()" style="margin-top: 10px; padding: 8px 16px; background: #444; color: white; border: none; border-radius: 5px; cursor: pointer;">
+                Zavřít
+            </button>
+        </div>
     </div>
     ` : ''}
     
@@ -3193,18 +3236,32 @@ app.get('/mylinks', async (req, res) => {
                 }
                 
                 // Renderovat všechny manuální linky
-                const manualLinksHtml = hasManualLinks ? manualLinksArray.map((manual, idx) => \`
-                    <div style="background: #0d1b2a; padding: 10px; margin-top: 10px; border-radius: 5px; position: relative;">
-                        <strong style="color: #00d9ff;">📌 Manuální link:</strong> \${manual.display_name}<br>
-                        <small style="color: #999;">Přidal: \${manual.added_by} • \${new Date(manual.added_at).toLocaleDateString('cs-CZ')}</small>
-                        \${(currentUser === manual.added_by || '${username}' === 'Procha') ? \`
+                const manualLinksHtml = hasManualLinks ? manualLinksArray.map((manual, idx) => {
+                    const isBroken = manual.status === 'broken';
+                    const isAdmin = '${username}' === 'Procha';
+                    const isOwner = currentUser === manual.added_by;
+                    
+                    // Přeskočit broken linky pro ostatní (ne vlastníka, ne admina)
+                    if (isBroken && !isOwner && !isAdmin) return '';
+                    
+                    return \`
+                    <div style="background: \${isBroken ? '#2d1b1b' : '#0d1b2a'}; padding: 10px; margin-top: 10px; border-radius: 5px; position: relative; border: \${isBroken ? '2px solid #ff4444' : 'none'};">
+                        <strong style="color: \${isBroken ? '#ff4444' : '#00d9ff'};">
+                            \${isBroken ? '⚠️ NEFUNKČNÍ LINK' : '📌 Manuální link'}:
+                        </strong> \${manual.display_name}<br>
+                        <small style="color: #999;">
+                            Přidal: \${manual.added_by} • \${new Date(manual.added_at).toLocaleDateString('cs-CZ')}
+                            \${isBroken ? \` • <span style="color: #ff4444;">Nefunguje od: \${new Date(manual.last_checked).toLocaleDateString('cs-CZ')}</span>\` : ''}
+                        </small>
+                        \${(isOwner || isAdmin) ? \`
                             <button onclick="deleteLink('\${query.replace(/'/g, "\\\\'")}', \${idx}, '\${encodeURIComponent(query)}')" 
                                     style="position: absolute; top: 10px; right: 10px; padding: 5px 10px; background: #ff4444; color: white; border: none; border-radius: 3px; cursor: pointer; font-size: 12px;">
                                 🗑️ Smazat
                             </button>
                         \` : ''}
                     </div>
-                \`).join('') : '';
+                \`;
+                }).filter(Boolean).join('') : '';
                 
                 return \`
                 <div class="search-item" style="display: flex; gap: 15px; align-items: start;">
@@ -3387,6 +3444,62 @@ app.get('/mylinks', async (req, res) => {
                 msgEl.style.display = 'block';
                 msgEl.style.color = type === 'success' ? '#00ff00' : '#ff0000';
             }
+        }
+        
+        // Admin - zobrazit všechny broken linky
+        async function showBrokenLinks() {
+            try {
+                const response = await fetch('/api/mylinks/manual');
+                const data = await response.json();
+                const manualLinks = data.links || {};
+                
+                // Najít všechny broken linky
+                const brokenLinks = [];
+                for (const [query, linksArray] of Object.entries(manualLinks)) {
+                    if (Array.isArray(linksArray)) {
+                        linksArray.forEach((link, idx) => {
+                            if (link.status === 'broken') {
+                                brokenLinks.push({
+                                    query,
+                                    idx,
+                                    link
+                                });
+                            }
+                        });
+                    }
+                }
+                
+                const panel = document.getElementById('brokenLinksPanel');
+                const list = document.getElementById('brokenLinksList');
+                
+                if (brokenLinks.length === 0) {
+                    list.innerHTML = '<p style="color: #00ff00;">✅ Žádné nefunkční linky!</p>';
+                } else {
+                    list.innerHTML = brokenLinks.map(item => \`
+                        <div style="background: #0d1b2a; padding: 10px; margin: 10px 0; border-radius: 5px; border-left: 4px solid #ff4444;">
+                            <strong style="color: #fff;">\${item.query}</strong><br>
+                            <span style="color: #00d9ff;">\${item.link.display_name}</span><br>
+                            <small style="color: #999;">
+                                Přidal: \${item.link.added_by} • 
+                                Selhalo: \${new Date(item.link.last_checked).toLocaleString('cs-CZ')} • 
+                                Počet selhání: \${item.link.fail_count || 1}
+                            </small>
+                            <button onclick="deleteLink('\${item.query.replace(/'/g, "\\\\'")}', \${item.idx}, '\${encodeURIComponent(item.query)}')" 
+                                    style="margin-top: 5px; padding: 5px 10px; background: #ff4444; color: white; border: none; border-radius: 3px; cursor: pointer;">
+                                🗑️ Smazat
+                            </button>
+                        </div>
+                    \`).join('');
+                }
+                
+                panel.style.display = 'block';
+            } catch (error) {
+                showAdminMessage('Chyba načítání: ' + error.message, 'error');
+            }
+        }
+        
+        function hideBrokenLinks() {
+            document.getElementById('brokenLinksPanel').style.display = 'none';
         }
         
         function showMessage(encodedQuery, msg, type) {
