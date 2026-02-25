@@ -369,7 +369,7 @@ async function restoreBackup(backupData, restoredBy) {
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '7.18.1', // Debug: Add logging to history endpoint to see if it's being called
+    version: '7.19.0', // CRITICAL: Remove ALL remaining template literals from client JS
     name: 'Webshare Anime',
     description: 'Anime a filmy z Webshare.cz s vyhledáváním',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -3360,32 +3360,30 @@ app.get('/mylinks', async (req, res) => {
                         '</div>';
                 }).filter(Boolean).join('') : '';
                 
-                return \`
-                <div class="search-item" style="display: flex; gap: 15px; align-items: start;">
-                    <img src="\${posterUrl}" 
-                         alt="Poster" 
-                         style="width: 60px; height: 90px; object-fit: cover; border-radius: 8px; flex-shrink: 0; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);"
-                         onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
-                    <div style="width: 60px; height: 90px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 8px; display: none; align-items: center; justify-content: center; font-size: 32px; flex-shrink: 0;">
-                        🎬
-                    </div>
-                    <div style="flex: 1;">
-                        <div class="search-query">\${title}</div>
-                        <div class="search-stats">
-                            🔍 Hledáno: \${stats.count}x | 
-                            📦 Nalezeno: \${stats.results_count} souborů |
-                            🕒 Naposledy: \${new Date(stats.last_search).toLocaleString('cs-CZ')}
-                        </div>
-                        \${manualLinksHtml}
-                        <div class="add-link-form">
-                            <input type="text" id="name_\${encodeURIComponent(query)}" placeholder="Název (např. 'Frieren EP1 CZ 1080p')" style="width: 100%; margin-bottom: 5px; padding: 8px; box-sizing: border-box;">
-                            <input type="text" id="link_\${encodeURIComponent(query)}" placeholder="Webshare URL nebo ident" style="width: 70%; display: inline-block; padding: 8px;">
-                            <button onclick="addLink('\${query.replace(/'/g, "\\\\'")}', '\${encodeURIComponent(query)}')" style="width: 28%; display: inline-block; padding: 8px;">Přidat</button>
-                            <p id="msg_\${encodeURIComponent(query)}" class="hidden"></p>
-                        </div>
-                    </div>
-                </div>
-            \`;
+                return '<div class="search-item" style="display: flex; gap: 15px; align-items: start;">' +
+                    '<img src="' + posterUrl + '" ' +
+                         'alt="Poster" ' +
+                         'style="width: 60px; height: 90px; object-fit: cover; border-radius: 8px; flex-shrink: 0; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);" ' +
+                         'onerror="this.style.display=\'none\'; this.nextElementSibling.style.display=\'flex\';">' +
+                    '<div style="width: 60px; height: 90px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 8px; display: none; align-items: center; justify-content: center; font-size: 32px; flex-shrink: 0;">' +
+                        '🎬' +
+                    '</div>' +
+                    '<div style="flex: 1;">' +
+                        '<div class="search-query">' + title + '</div>' +
+                        '<div class="search-stats">' +
+                            '🔍 Hledáno: ' + stats.count + 'x | ' +
+                            '📦 Nalezeno: ' + stats.results_count + ' souborů | ' +
+                            '🕒 Naposledy: ' + new Date(stats.last_search).toLocaleString('cs-CZ') +
+                        '</div>' +
+                        manualLinksHtml +
+                        '<div class="add-link-form">' +
+                            '<input type="text" id="name_' + encodeURIComponent(query) + '" placeholder="Název (např. \'Frieren EP1 CZ 1080p\')" style="width: 100%; margin-bottom: 5px; padding: 8px; box-sizing: border-box;">' +
+                            '<input type="text" id="link_' + encodeURIComponent(query) + '" placeholder="Webshare URL nebo ident" style="width: 70%; display: inline-block; padding: 8px;">' +
+                            '<button onclick="addLink(\'' + query.replace(/'/g, "\\'") + '\', \'' + encodeURIComponent(query) + '\')" style="width: 28%; display: inline-block; padding: 8px;">Přidat</button>' +
+                            '<p id="msg_' + encodeURIComponent(query) + '" class="hidden"></p>' +
+                        '</div>' +
+                    '</div>' +
+                '</div>';
             }).join('');
         }
         
@@ -3483,7 +3481,7 @@ app.get('/mylinks', async (req, res) => {
                     const url = URL.createObjectURL(blob);
                     const a = document.createElement('a');
                     a.href = url;
-                    a.download = \`webshare-addon-backup-\${new Date().toISOString().split('T')[0]}.json\`;
+                    a.download = 'webshare-addon-backup-' + new Date().toISOString().split('T')[0] + '.json';
                     a.click();
                     URL.revokeObjectURL(url);
                     
@@ -3522,7 +3520,7 @@ app.get('/mylinks', async (req, res) => {
                 const data = await response.json();
                 
                 if (data.success) {
-                    showAdminMessage(\`✅ Záloha obnovena (\${data.restored} linků). Obnovte stránku.\`, 'success');
+                    showAdminMessage('✅ Záloha obnovena (' + data.restored + ' linků). Obnovte stránku.', 'success');
                     setTimeout(() => location.reload(), 2000);
                 } else {
                     showAdminMessage('❌ ' + (data.error || 'Chyba'), 'error');
@@ -3572,21 +3570,21 @@ app.get('/mylinks', async (req, res) => {
                 if (brokenLinks.length === 0) {
                     list.innerHTML = '<p style="color: #00ff00;">✅ Žádné nefunkční linky!</p>';
                 } else {
-                    list.innerHTML = brokenLinks.map(item => \`
-                        <div style="background: #0d1b2a; padding: 10px; margin: 10px 0; border-radius: 5px; border-left: 4px solid #ff4444;">
-                            <strong style="color: #fff;">\${item.query}</strong><br>
-                            <span style="color: #00d9ff;">\${item.link.display_name}</span><br>
-                            <small style="color: #999;">
-                                Přidal: \${item.link.added_by} • 
-                                Selhalo: \${new Date(item.link.last_checked).toLocaleString('cs-CZ')} • 
-                                Počet selhání: \${item.link.fail_count || 1}
-                            </small>
-                            <button onclick="deleteLink('\${item.query.replace(/'/g, "\\\\'")}', \${item.idx}, '\${encodeURIComponent(item.query)}')" 
-                                    style="margin-top: 5px; padding: 5px 10px; background: #ff4444; color: white; border: none; border-radius: 3px; cursor: pointer;">
-                                🗑️ Smazat
-                            </button>
-                        </div>
-                    \`).join('');
+                    list.innerHTML = brokenLinks.map(item => 
+                        '<div style="background: #0d1b2a; padding: 10px; margin: 10px 0; border-radius: 5px; border-left: 4px solid #ff4444;">' +
+                            '<strong style="color: #fff;">' + item.query + '</strong><br>' +
+                            '<span style="color: #00d9ff;">' + item.link.display_name + '</span><br>' +
+                            '<small style="color: #999;">' +
+                                'Přidal: ' + item.link.added_by + ' • ' +
+                                'Selhalo: ' + new Date(item.link.last_checked).toLocaleString('cs-CZ') + ' • ' +
+                                'Počet selhání: ' + (item.link.fail_count || 1) +
+                            '</small>' +
+                            '<button onclick="deleteLink(\'' + item.query.replace(/'/g, "\\'") + '\', ' + item.idx + ', \'' + encodeURIComponent(item.query) + '\')" ' +
+                                    'style="margin-top: 5px; padding: 5px 10px; background: #ff4444; color: white; border: none; border-radius: 3px; cursor: pointer;">' +
+                                '🗑️ Smazat' +
+                            '</button>' +
+                        '</div>'
+                    ).join('');
                 }
                 
                 panel.style.display = 'block';
