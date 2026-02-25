@@ -101,11 +101,59 @@ const r2Client = new S3Client({
 const R2_BUCKET = process.env.R2_BUCKET_NAME || 'titulky-cache';
 const R2_PREFIX = 'webshare-addon/';
 
-// Admin uživatelé - mají právo mazat všechny linky
-const ADMIN_USERS = ['Procha'];
+// Super admin - nemůže být odebrán
+const SUPER_ADMIN = 'Procha';
 
-function isAdmin(username) {
-    return ADMIN_USERS.includes(username);
+// Získat seznam adminů z R2
+async function getAdmins() {
+    const admins = await getFromR2('admins.json') || [SUPER_ADMIN];
+    // Vždy zahrnout super admina
+    if (!admins.includes(SUPER_ADMIN)) {
+        admins.push(SUPER_ADMIN);
+    }
+    return admins;
+}
+
+async function isAdmin(username) {
+    const admins = await getAdmins();
+    return admins.includes(username);
+}
+
+async function addAdmin(username, addedBy) {
+    if (!await isAdmin(addedBy)) {
+        return { success: false, error: 'Only admins can add admins' };
+    }
+    
+    const admins = await getAdmins();
+    if (admins.includes(username)) {
+        return { success: false, error: 'Already an admin' };
+    }
+    
+    admins.push(username);
+    await putToR2('admins.json', admins);
+    console.log(`✅ Admin added: ${username} by ${addedBy}`);
+    return { success: true };
+}
+
+async function removeAdmin(username, removedBy) {
+    if (!await isAdmin(removedBy)) {
+        return { success: false, error: 'Only admins can remove admins' };
+    }
+    
+    if (username === SUPER_ADMIN) {
+        return { success: false, error: 'Cannot remove super admin' };
+    }
+    
+    const admins = await getAdmins();
+    const index = admins.indexOf(username);
+    if (index === -1) {
+        return { success: false, error: 'Not an admin' };
+    }
+    
+    admins.splice(index, 1);
+    await putToR2('admins.json', admins);
+    console.log(`✅ Admin removed: ${username} by ${removedBy}`);
+    return { success: true };
 }
 
 // R2 Helper Functions
@@ -321,7 +369,7 @@ async function restoreBackup(backupData, restoredBy) {
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '7.15.1', // Admin broken links panel, owners see warnings instead of hidden
+    version: '7.16.0', // MAJOR: Admin management system - add/remove admins, stored in R2
     name: 'Webshare Anime',
     description: 'Anime a filmy z Webshare.cz s vyhledáváním',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -3005,19 +3053,38 @@ app.get('/mylinks', async (req, res) => {
     ${username === 'Procha' ? `
     <div style="background: #2d1b00; border: 2px solid #ff9500; border-radius: 10px; padding: 20px; margin: 20px 0;">
         <h2 style="color: #ff9500; margin-top: 0;">👑 Admin Panel</h2>
-        <div style="display: flex; gap: 10px; margin-top: 15px;">
-            <button onclick="downloadBackup()" style="flex: 1; padding: 12px; background: #00d9ff; color: #1a1a2e; border: none; border-radius: 5px; cursor: pointer; font-weight: bold;">
+        <div style="display: flex; gap: 10px; margin-top: 15px; flex-wrap: wrap;">
+            <button onclick="downloadBackup()" style="flex: 1; min-width: 150px; padding: 12px; background: #00d9ff; color: #1a1a2e; border: none; border-radius: 5px; cursor: pointer; font-weight: bold;">
                 💾 Stáhnout zálohu
             </button>
-            <label style="flex: 1; padding: 12px; background: #7b2cbf; color: white; border-radius: 5px; cursor: pointer; font-weight: bold; text-align: center; display: block;">
+            <label style="flex: 1; min-width: 150px; padding: 12px; background: #7b2cbf; color: white; border-radius: 5px; cursor: pointer; font-weight: bold; text-align: center; display: block;">
                 📤 Nahrát zálohu
                 <input type="file" id="restoreFile" accept=".json" style="display: none;" onchange="restoreBackup(this)">
             </label>
-            <button onclick="showBrokenLinks()" style="flex: 1; padding: 12px; background: #ff4444; color: white; border: none; border-radius: 5px; cursor: pointer; font-weight: bold;">
+            <button onclick="showBrokenLinks()" style="flex: 1; min-width: 150px; padding: 12px; background: #ff4444; color: white; border: none; border-radius: 5px; cursor: pointer; font-weight: bold;">
                 ⚠️ Nefunkční linky
+            </button>
+            <button onclick="showAdminManager()" style="flex: 1; min-width: 150px; padding: 12px; background: #ff9500; color: white; border: none; border-radius: 5px; cursor: pointer; font-weight: bold;">
+                👥 Správa adminů
             </button>
         </div>
         <p id="adminMessage" style="margin-top: 10px; display: none;"></p>
+        
+        <!-- Admin Management Panel -->
+        <div id="adminManagerPanel" style="display: none; margin-top: 20px; padding: 15px; background: #1a0d00; border: 2px solid #ff9500; border-radius: 8px;">
+            <h3 style="color: #ff9500; margin-top: 0;">👥 Správa adminů</h3>
+            <div id="adminsList" style="margin-bottom: 15px;"></div>
+            <div style="display: flex; gap: 10px; margin-top: 15px;">
+                <input type="text" id="newAdminUsername" placeholder="Uživatelské jméno" style="flex: 1; padding: 10px; background: #0d1b2a; color: white; border: 1px solid #ff9500; border-radius: 5px;">
+                <button onclick="addNewAdmin()" style="padding: 10px 20px; background: #00d9ff; color: #1a1a2e; border: none; border-radius: 5px; cursor: pointer; font-weight: bold;">
+                    ➕ Přidat admina
+                </button>
+            </div>
+            <p id="adminManagerMessage" style="margin-top: 10px; display: none;"></p>
+            <button onclick="hideAdminManager()" style="margin-top: 15px; padding: 8px 16px; background: #444; color: white; border: none; border-radius: 5px; cursor: pointer;">
+                Zavřít
+            </button>
+        </div>
         
         <!-- Broken Links Panel -->
         <div id="brokenLinksPanel" style="display: none; margin-top: 20px; padding: 15px; background: #1a0d0d; border: 2px solid #ff4444; border-radius: 8px;">
@@ -3502,6 +3569,102 @@ app.get('/mylinks', async (req, res) => {
             document.getElementById('brokenLinksPanel').style.display = 'none';
         }
         
+        // Admin Manager funkce
+        async function showAdminManager() {
+            try {
+                const response = await fetch('/api/admins/list');
+                const data = await response.json();
+                const admins = data.admins || [];
+                
+                const list = document.getElementById('adminsList');
+                list.innerHTML = '<h4 style="color: #fff; margin: 10px 0;">Současní admini:</h4>' + 
+                    admins.map(admin => `
+                        <div style="background: #0d1b2a; padding: 10px; margin: 5px 0; border-radius: 5px; display: flex; justify-content: space-between; align-items: center;">
+                            <span style="color: #00d9ff; font-weight: bold;">${admin === 'Procha' ? '👑 ' : ''}${admin}</span>
+                            ${admin !== 'Procha' ? `
+                                <button onclick="removeExistingAdmin('${admin}')" style="padding: 5px 10px; background: #ff4444; color: white; border: none; border-radius: 3px; cursor: pointer;">
+                                    ❌ Odebrat
+                                </button>
+                            ` : '<span style="color: #ff9500;">Super Admin (nelze odebrat)</span>'}
+                        </div>
+                    `).join('');
+                
+                document.getElementById('adminManagerPanel').style.display = 'block';
+            } catch (error) {
+                showAdminMessage('Chyba načítání adminů: ' + error.message, 'error');
+            }
+        }
+        
+        function hideAdminManager() {
+            document.getElementById('adminManagerPanel').style.display = 'none';
+        }
+        
+        async function addNewAdmin() {
+            const input = document.getElementById('newAdminUsername');
+            const username = input.value.trim();
+            
+            if (!username) {
+                showAdminManagerMessage('Zadej uživatelské jméno', 'error');
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/admins/add', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username, added_by: currentUser })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    showAdminManagerMessage(`✅ ${username} je nyní admin`, 'success');
+                    input.value = '';
+                    // Refresh seznamu
+                    setTimeout(() => showAdminManager(), 1000);
+                } else {
+                    showAdminManagerMessage('❌ ' + data.error, 'error');
+                }
+            } catch (error) {
+                showAdminManagerMessage('❌ Chyba: ' + error.message, 'error');
+            }
+        }
+        
+        async function removeExistingAdmin(username) {
+            if (!confirm(`Opravdu odebrat admin práva uživateli ${username}?`)) {
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/admins/remove', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username, removed_by: currentUser })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    showAdminManagerMessage(`✅ ${username} už není admin`, 'success');
+                    // Refresh seznamu
+                    setTimeout(() => showAdminManager(), 1000);
+                } else {
+                    showAdminManagerMessage('❌ ' + data.error, 'error');
+                }
+            } catch (error) {
+                showAdminManagerMessage('❌ Chyba: ' + error.message, 'error');
+            }
+        }
+        
+        function showAdminManagerMessage(msg, type) {
+            const msgEl = document.getElementById('adminManagerMessage');
+            if (msgEl) {
+                msgEl.textContent = msg;
+                msgEl.style.display = 'block';
+                msgEl.style.color = type === 'success' ? '#00ff00' : '#ff0000';
+            }
+        }
+        
         function showMessage(encodedQuery, msg, type) {
             const msgEl = document.getElementById('msg_' + encodedQuery);
             msgEl.textContent = msg;
@@ -3660,7 +3823,7 @@ app.post('/api/mylinks/restore', async (req, res) => {
     try {
         const { username, backup } = req.body;
         
-        if (!isAdmin(username)) {
+        if (!await isAdmin(username)) {
             return res.json({ error: 'Admin only', success: false });
         }
         
@@ -3669,6 +3832,53 @@ app.post('/api/mylinks/restore', async (req, res) => {
         
     } catch (error) {
         console.error('Restore API error:', error);
+        res.json({ error: 'Server error', success: false });
+    }
+});
+
+// API - seznam adminů
+app.get('/api/admins/list', async (req, res) => {
+    try {
+        const admins = await getAdmins();
+        res.json({ admins });
+    } catch (error) {
+        console.error('List admins error:', error);
+        res.json({ error: 'Server error', admins: [] });
+    }
+});
+
+// API - přidat admina
+app.post('/api/admins/add', async (req, res) => {
+    try {
+        const { username, added_by } = req.body;
+        
+        if (!username || !added_by) {
+            return res.json({ error: 'Missing data', success: false });
+        }
+        
+        const result = await addAdmin(username, added_by);
+        res.json(result);
+        
+    } catch (error) {
+        console.error('Add admin error:', error);
+        res.json({ error: 'Server error', success: false });
+    }
+});
+
+// API - odebrat admina
+app.post('/api/admins/remove', async (req, res) => {
+    try {
+        const { username, removed_by } = req.body;
+        
+        if (!username || !removed_by) {
+            return res.json({ error: 'Missing data', success: false });
+        }
+        
+        const result = await removeAdmin(username, removed_by);
+        res.json(result);
+        
+    } catch (error) {
+        console.error('Remove admin error:', error);
         res.json({ error: 'Server error', success: false });
     }
 });
