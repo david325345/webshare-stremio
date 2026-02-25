@@ -190,15 +190,23 @@ async function getManualLinks() {
 async function addManualLink(query, webshareIdent, addedBy, displayName, poster) {
     try {
         const manualLinks = await getManualLinks();
-        manualLinks[query] = {
+        
+        // Inicializovat pole pokud neexistuje
+        if (!manualLinks[query]) {
+            manualLinks[query] = [];
+        }
+        
+        // Přidat nový link do pole
+        manualLinks[query].push({
             webshare_ident: webshareIdent,
             added_by: addedBy,
             added_at: new Date().toISOString(),
             display_name: displayName || query,
             poster: poster || null
-        };
+        });
+        
         await putToR2('manual-links.json', manualLinks);
-        console.log(`✅ Manual link added: "${query}" → ${webshareIdent}`);
+        console.log(`✅ Manual link added: "${query}" → ${webshareIdent} (${manualLinks[query].length} total)`);
         return true;
     } catch (error) {
         console.error('Failed to add manual link:', error.message);
@@ -206,24 +214,35 @@ async function addManualLink(query, webshareIdent, addedBy, displayName, poster)
     }
 }
 
-async function deleteManualLink(query, requestingUser) {
+async function deleteManualLink(query, linkIndex, requestingUser) {
     try {
         const manualLinks = await getManualLinks();
         
-        if (!manualLinks[query]) {
+        if (!manualLinks[query] || !Array.isArray(manualLinks[query])) {
             return { success: false, error: 'Link neexistuje' };
         }
         
-        const link = manualLinks[query];
+        if (linkIndex >= manualLinks[query].length) {
+            return { success: false, error: 'Link neexistuje' };
+        }
+        
+        const link = manualLinks[query][linkIndex];
         
         // Check permissions
         if (!isAdmin(requestingUser) && link.added_by !== requestingUser) {
             return { success: false, error: 'Nemáte oprávnění smazat tento link' };
         }
         
-        delete manualLinks[query];
+        // Odstranit z pole
+        manualLinks[query].splice(linkIndex, 1);
+        
+        // Pokud je pole prázdné, smazat celý klíč
+        if (manualLinks[query].length === 0) {
+            delete manualLinks[query];
+        }
+        
         await putToR2('manual-links.json', manualLinks);
-        console.log(`✅ Manual link deleted: "${query}" by ${requestingUser}`);
+        console.log(`✅ Manual link deleted: "${query}" [${linkIndex}] by ${requestingUser}`);
         return { success: true };
     } catch (error) {
         console.error('Failed to delete manual link:', error.message);
@@ -273,7 +292,7 @@ async function restoreBackup(backupData, restoredBy) {
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '7.12.1', // Display custom name from My Links instead of "Manuální link"
+    version: '7.13.0', // MAJOR: Multiple manual links per title - array structure instead of single object
     name: 'Webshare Anime',
     description: 'Anime a filmy z Webshare.cz s vyhledáváním',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -1278,54 +1297,57 @@ async function handleStreamRequest(args) {
         console.log('Search queries:', searchQueries);
         
         // ========== CHECK PRO MANUÁLNÍ LINKY ==========
-        // Zkontrolovat jestli existuje manuální link pro tento query
-        let manualLinkStream = null;
+        // Zkontrolovat jestli existují manuální linky pro tento query
+        let manualLinkStreams = [];
         if (searchQueries.length > 0) {
             const manualLinks = await getManualLinks();
             const queryKey = `${args.id.split(':')[0]}: ${searchQueries[0]}`;
-            console.log('Checking manual link for:', queryKey);
+            console.log('Checking manual links for:', queryKey);
             
-            if (manualLinks[queryKey]) {
-                const manual = manualLinks[queryKey];
-                console.log('Found manual link:', manual);
+            if (manualLinks[queryKey] && Array.isArray(manualLinks[queryKey])) {
+                // Iterovat přes všechny manuální linky pro tento query
+                for (let i = 0; i < manualLinks[queryKey].length; i++) {
+                    const manual = manualLinks[queryKey][i];
+                    console.log(`Found manual link [${i}]:`, manual);
                 
-                try {
-                    // Získat info a link pro manuální soubor
-                    const fileInfo = await getFileInfo(manual.webshare_ident, token);
-                    if (fileInfo) {
-                        const link = await getFileLink(manual.webshare_ident, token);
-                        if (link) {
-                            // Extrahovat kvalitu z názvu souboru
-                            const quality = detectQuality(fileInfo.name);
-                            const qualityStr = quality.resolution || 'SD';
-                            const sizeStr = formatSize(fileInfo.size);
-                            
-                            // Detekce jazyka
-                            const nameUpper = fileInfo.name.toUpperCase();
-                            const languages = [];
-                            if (nameUpper.includes('CZ') || nameUpper.includes('CZECH')) languages.push('🇨🇿 CZ');
-                            if (nameUpper.includes('SK') || nameUpper.includes('SLOVAK')) languages.push('🇸🇰 SK');
-                            if (nameUpper.includes('EN') || nameUpper.includes('ENGLISH')) languages.push('🇬🇧 EN');
-                            
-                            // Název streamu - VLEVO se zobrazí název filmu/epizody
-                            const streamName = `Webshare.cz
+                    try {
+                        // Získat info a link pro manuální soubor
+                        const fileInfo = await getFileInfo(manual.webshare_ident, token);
+                        if (fileInfo) {
+                            const link = await getFileLink(manual.webshare_ident, token);
+                            if (link) {
+                                // Extrahovat kvalitu z názvu souboru
+                                const quality = detectQuality(fileInfo.name);
+                                const qualityStr = quality.resolution || 'SD';
+                                const sizeStr = formatSize(fileInfo.size);
+                                
+                                // Detekce jazyka
+                                const nameUpper = fileInfo.name.toUpperCase();
+                                const languages = [];
+                                if (nameUpper.includes('CZ') || nameUpper.includes('CZECH')) languages.push('🇨🇿 CZ');
+                                if (nameUpper.includes('SK') || nameUpper.includes('SLOVAK')) languages.push('🇸🇰 SK');
+                                if (nameUpper.includes('EN') || nameUpper.includes('ENGLISH')) languages.push('🇬🇧 EN');
+                                
+                                // Název streamu - VLEVO se zobrazí název filmu/epizody
+                                const streamName = `Webshare.cz
 ${languages.join('+')} 📺 ${qualityStr} 💾${sizeStr}`;
-                            
-                            manualLinkStream = {
-                                name: streamName,
-                                title: `📌 ${manual.display_name || fileInfo.name || 'Manuální link'}`, // Fallback pro starý formát
-                                url: link,
-                                behaviorHints: {
-                                    bingeGroup: 'webshare-manual',
-                                    videoSize: fileInfo.size,
-                                    filename: fileInfo.name
-                                }
-                            };
-                            console.log('Manual link stream created with title:', manual.display_name || fileInfo.name);
+                                
+                                manualLinkStreams.push({
+                                    name: streamName,
+                                    title: `📌 ${manual.display_name || fileInfo.name || 'Manuální link'}`,
+                                    url: link,
+                                    behaviorHints: {
+                                        bingeGroup: 'webshare-manual',
+                                        videoSize: fileInfo.size,
+                                        filename: fileInfo.name
+                                    }
+                                });
+                                console.log(`Manual link stream [${i}] created:`, manual.display_name || fileInfo.name);
+                            }
                         }
+                    } catch (error) {
+                        console.error(`Failed to load manual link [${i}]:`, error.message);
                     }
-                } catch (error) {
-                    console.error('Failed to load manual link:', error.message);
                 }
             }
         }
@@ -2082,10 +2104,10 @@ ${languages.join('+')} 📺 ${qualityStr} 💾${sizeStr}`;
         const allStreams = await Promise.all(streamPromises);
         const validStreams = allStreams.filter(s => s !== null);
         
-        // Přidat manuální link stream NA ZAČÁTEK pokud existuje
-        if (manualLinkStream) {
-            validStreams.unshift(manualLinkStream);
-            console.log('Manual link stream added to beginning');
+        // Přidat všechny manuální linky NA ZAČÁTEK pokud existují
+        if (manualLinkStreams.length > 0) {
+            validStreams.unshift(...manualLinkStreams);
+            console.log(`${manualLinkStreams.length} manual link streams added to beginning`);
         }
         
         console.log(`Returning ${validStreams.length} streams to Stremio`);
@@ -3127,8 +3149,8 @@ app.get('/mylinks', async (req, res) => {
                 .slice(0, 10);
             
             historyDiv.innerHTML = sorted.map(([query, stats]) => {
-                const manual = manualLinks[query];
-                const hasManualLink = !!manual;
+                const manualLinksArray = manualLinks[query] || [];
+                const hasManualLinks = Array.isArray(manualLinksArray) && manualLinksArray.length > 0;
                 
                 // Extrahovat název a poster
                 let title = query;
@@ -3143,6 +3165,20 @@ app.get('/mylinks', async (req, res) => {
                 if (query.includes('kitsu:')) {
                     title = query.replace(/^kitsu:\\d+:\\s*/, '');
                 }
+                
+                // Renderovat všechny manuální linky
+                const manualLinksHtml = hasManualLinks ? manualLinksArray.map((manual, idx) => \`
+                    <div style="background: #0d1b2a; padding: 10px; margin-top: 10px; border-radius: 5px; position: relative;">
+                        <strong style="color: #00d9ff;">📌 Manuální link:</strong> \${manual.display_name}<br>
+                        <small style="color: #999;">Přidal: \${manual.added_by} • \${new Date(manual.added_at).toLocaleDateString('cs-CZ')}</small>
+                        \${(currentUser === manual.added_by || '${username}' === 'Procha') ? \`
+                            <button onclick="deleteLink('\${query.replace(/'/g, "\\\\'")}', \${idx}, '\${encodeURIComponent(query)}')" 
+                                    style="position: absolute; top: 10px; right: 10px; padding: 5px 10px; background: #ff4444; color: white; border: none; border-radius: 3px; cursor: pointer; font-size: 12px;">
+                                🗑️ Smazat
+                            </button>
+                        \` : ''}
+                    </div>
+                \`).join('') : '';
                 
                 return \`
                 <div class="search-item" style="display: flex; gap: 15px; align-items: start;">
@@ -3160,18 +3196,7 @@ app.get('/mylinks', async (req, res) => {
                             📦 Nalezeno: \${stats.results_count} souborů |
                             🕒 Naposledy: \${new Date(stats.last_search).toLocaleString('cs-CZ')}
                         </div>
-                        \${hasManualLink ? \`
-                            <div style="background: #0d1b2a; padding: 10px; margin-top: 10px; border-radius: 5px; position: relative;">
-                                <strong style="color: #00d9ff;">📌 Manuální link:</strong> \${manual.display_name}<br>
-                                <small style="color: #999;">Přidal: \${manual.added_by} • \${new Date(manual.added_at).toLocaleDateString('cs-CZ')}</small>
-                                \${(currentUser === manual.added_by || '${username}' === 'Procha') ? \`
-                                    <button onclick="deleteLink('\${query.replace(/'/g, "\\\\'")}', '\${encodeURIComponent(query)}')" 
-                                            style="position: absolute; top: 10px; right: 10px; padding: 5px 10px; background: #ff4444; color: white; border: none; border-radius: 3px; cursor: pointer; font-size: 12px;">
-                                        🗑️ Smazat
-                                    </button>
-                                \` : ''}
-                            </div>
-                        \` : ''}
+                        \${manualLinksHtml}
                         <div class="add-link-form">
                             <input type="text" id="name_\${encodeURIComponent(query)}" placeholder="Název (např. 'Frieren EP1 CZ 1080p')" style="width: 100%; margin-bottom: 5px; padding: 8px; box-sizing: border-box;">
                             <input type="text" id="link_\${encodeURIComponent(query)}" placeholder="Webshare URL nebo ident" style="width: 70%; display: inline-block; padding: 8px;">
@@ -3227,7 +3252,7 @@ app.get('/mylinks', async (req, res) => {
             }
         }
         
-        async function deleteLink(query, encodedQuery) {
+        async function deleteLink(query, linkIndex, encodedQuery) {
             if (!confirm('Opravdu chcete smazat tento manuální link?')) {
                 return;
             }
@@ -3238,7 +3263,8 @@ app.get('/mylinks', async (req, res) => {
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ 
                         username: currentUser,
-                        query: query
+                        query: query,
+                        link_index: linkIndex
                     })
                 });
                 
@@ -3407,13 +3433,13 @@ app.post('/api/mylinks/add', async (req, res) => {
 // API endpoint - smazat manuální link
 app.post('/api/mylinks/delete', async (req, res) => {
     try {
-        const { username, query } = req.body;
+        const { username, query, link_index } = req.body;
         
-        if (!username || !query) {
+        if (!username || !query || link_index === undefined) {
             return res.json({ error: 'Missing data', success: false });
         }
         
-        const result = await deleteManualLink(query, username);
+        const result = await deleteManualLink(query, link_index, username);
         res.json(result);
         
     } catch (error) {
