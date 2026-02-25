@@ -369,7 +369,7 @@ async function restoreBackup(backupData, restoredBy) {
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '7.16.2', // Fix: Another syntax error with template string variable interpolation
+    version: '7.16.3', // Fix: Use JSON.stringify instead of template string interpolation in script tag
     name: 'Webshare Anime',
     description: 'Anime a filmy z Webshare.cz s vyhledáváním',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -3108,10 +3108,10 @@ app.get('/mylinks', async (req, res) => {
     
     <script>
         console.log('My Links JS loaded');
-        let currentUser = '${username}';
-        let currentPassword = '${password}';
-        let currentIsAdmin = '${username}' === 'Procha';
-        const tmdbApiKey = '${tmdbApiKey}';
+        let currentUser = ${JSON.stringify(username)};
+        let currentPassword = ${JSON.stringify(password)};
+        let currentIsAdmin = ${username === 'Procha'};
+        const tmdbApiKey = ${JSON.stringify(tmdbApiKey)};
         console.log('TMDB API key available:', !!tmdbApiKey);
         console.log('Current user:', currentUser);
         console.log('Is admin:', currentIsAdmin);
