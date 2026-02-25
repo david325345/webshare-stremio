@@ -369,7 +369,7 @@ async function restoreBackup(backupData, restoredBy) {
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '7.16.6', // Fix: Use placeholder replacement instead of template string interpolation
+    version: '7.16.7', // Fix: Remove template literals from JavaScript inside HTML template string
     name: 'Webshare Anime',
     description: 'Anime a filmy z Webshare.cz s vyhledáváním',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -3642,7 +3642,7 @@ app.get('/mylinks', async (req, res) => {
                 const data = await response.json();
                 
                 if (data.success) {
-                    showAdminManagerMessage(`✅ ${username} je nyní admin`, 'success');
+                    showAdminManagerMessage('✅ ' + username + ' je nyní admin', 'success');
                     input.value = '';
                     // Refresh seznamu
                     setTimeout(() => showAdminManager(), 1000);
@@ -3669,7 +3669,7 @@ app.get('/mylinks', async (req, res) => {
                 const data = await response.json();
                 
                 if (data.success) {
-                    showAdminManagerMessage(`✅ ${username} už není admin`, 'success');
+                    showAdminManagerMessage('✅ ' + username + ' už není admin', 'success');
                     // Refresh seznamu
                     setTimeout(() => showAdminManager(), 1000);
                 } else {
