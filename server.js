@@ -2772,7 +2772,7 @@ app.get('/:userConfig/manifest.json', (req, res) => {
         const configB64 = req.params.userConfig;
         
         // Dekódujeme config z base64
-        const configJson = Buffer.from(configB64, 'base64').toString('utf8');
+        const configJson = Buffer.from(decodeURIComponent(configB64), 'base64').toString('utf8');
         const config = JSON.parse(configJson);
         
         console.log(`📦 Personal manifest request for user: ${config.username}`);
@@ -2806,7 +2806,7 @@ app.get('/:userConfig/stream/:type/:id.json', async (req, res) => {
         const configB64 = req.params.userConfig;
         
         // Dekódujeme config
-        const configJson = Buffer.from(configB64, 'base64').toString('utf8');
+        const configJson = Buffer.from(decodeURIComponent(configB64), 'base64').toString('utf8');
         const config = JSON.parse(configJson);
         
         // Vytvoříme args pro stream handler
@@ -2844,7 +2844,7 @@ app.get(/^\/([^\/]+)\/catalog\/([^\/]+)\/([^\/]+)\/(.+)$/, async (req, res) => {
         const extraPath = req.params[3];
         
         // Dekódujeme config
-        const configJson = Buffer.from(configB64, 'base64').toString('utf8');
+        const configJson = Buffer.from(decodeURIComponent(configB64), 'base64').toString('utf8');
         const config = JSON.parse(configJson);
         
         // Odstranit .json na konci
@@ -2895,7 +2895,7 @@ app.get('/:userConfig/meta/:type/:id.json', async (req, res) => {
         const configB64 = req.params.userConfig;
         
         // Dekódujeme config
-        const configJson = Buffer.from(configB64, 'base64').toString('utf8');
+        const configJson = Buffer.from(decodeURIComponent(configB64), 'base64').toString('utf8');
         const config = JSON.parse(configJson);
         
         // Vytvoříme args pro meta handler
@@ -2937,7 +2937,7 @@ app.get('/mylinks', async (req, res) => {
     
     if (req.query.config) {
         try {
-            const configJson = Buffer.from(req.query.config, 'base64').toString('utf8');
+            const configJson = Buffer.from(decodeURIComponent(req.query.config), 'base64').toString('utf8');
             const config = JSON.parse(configJson);
             username = config.username || '';
             password = config.password || '';
@@ -3757,7 +3757,7 @@ app.get('/mylinks', async (req, res) => {
     htmlPage = htmlPage
         .replace(/__USERNAME__/g, JSON.stringify(username || ''))
         .replace(/__PASSWORD__/g, JSON.stringify(password || ''))
-        .replace(/__IS_ADMIN__/g, (username === 'Procha').toString())
+        .replace(/__IS_ADMIN__/g, JSON.stringify(username === 'Procha'))
         .replace(/__TMDB_KEY__/g, JSON.stringify(tmdbApiKey || ''))
         .replace(/__ADMIN_PANEL__/g, adminPanelHTML)
         .replace(/__HISTORY_CLASS__/g, username ? '' : 'hidden')
