@@ -369,7 +369,7 @@ async function restoreBackup(backupData, restoredBy) {
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '7.16.11', // Debug: Add alert to test if JavaScript executes
+    version: '7.16.12', // Debug: Print generated JavaScript to see what browser gets
     name: 'Webshare Anime',
     description: 'Anime a filmy z Webshare.cz s vyhledáváním',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -3711,7 +3711,7 @@ app.get('/mylinks', async (req, res) => {
     htmlPage = htmlPage
         .replace(/__USERNAME__/g, JSON.stringify(username || ''))
         .replace(/__PASSWORD__/g, JSON.stringify(password || ''))
-        .replace(/__IS_ADMIN__/g, (username === 'Procha').toString())
+        .replace(/__IS_ADMIN__/g, JSON.stringify(username === 'Procha'))
         .replace(/__TMDB_KEY__/g, JSON.stringify(tmdbApiKey || ''));
     
     console.log('Replaced username:', JSON.stringify(username));
@@ -3721,6 +3721,13 @@ app.get('/mylinks', async (req, res) => {
     if (htmlPage.includes('__PASSWORD__')) console.warn('WARNING: __PASSWORD__ not replaced!');
     if (htmlPage.includes('__IS_ADMIN__')) console.warn('WARNING: __IS_ADMIN__ not replaced!');
     if (htmlPage.includes('__TMDB_KEY__')) console.warn('WARNING: __TMDB_KEY__ not replaced!');
+    
+    // Debug: Print script variables section
+    const scriptStart = htmlPage.indexOf('let currentUser =');
+    if (scriptStart > -1) {
+        console.log('Script variables section:');
+        console.log(htmlPage.substring(scriptStart, scriptStart + 300));
+    }
     
     res.send(htmlPage);
 });
