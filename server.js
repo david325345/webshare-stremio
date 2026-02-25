@@ -369,7 +369,7 @@ async function restoreBackup(backupData, restoredBy) {
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '7.16.1', // Fix: Syntax error in nested template strings
+    version: '7.16.2', // Fix: Another syntax error with template string variable interpolation
     name: 'Webshare Anime',
     description: 'Anime a filmy z Webshare.cz s vyhledáváním',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -3110,9 +3110,11 @@ app.get('/mylinks', async (req, res) => {
         console.log('My Links JS loaded');
         let currentUser = '${username}';
         let currentPassword = '${password}';
+        let currentIsAdmin = '${username}' === 'Procha';
         const tmdbApiKey = '${tmdbApiKey}';
         console.log('TMDB API key available:', !!tmdbApiKey);
         console.log('Current user:', currentUser);
+        console.log('Is admin:', currentIsAdmin);
         
         // Auto-load historie pokud máme username z configu
         if (currentUser) {
@@ -3305,7 +3307,7 @@ app.get('/mylinks', async (req, res) => {
                 // Renderovat všechny manuální linky
                 const manualLinksHtml = hasManualLinks ? manualLinksArray.map((manual, idx) => {
                     const isBroken = manual.status === 'broken';
-                    const isAdmin = '${username}' === 'Procha';
+                    const isAdmin = currentIsAdmin;
                     const isOwner = currentUser === manual.added_by;
                     
                     // Přeskočit broken linky pro ostatní (ne vlastníka, ne admina)
