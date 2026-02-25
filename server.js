@@ -369,7 +369,7 @@ async function restoreBackup(backupData, restoredBy) {
 
 const manifest = {
     id: 'com.webshare.anime',
-    version: '7.17.0', // MAJOR FIX: Remove nested template literals, use placeholders for admin panel
+    version: '7.17.1', // Fix: Use toString() for boolean instead of JSON.stringify
     name: 'Webshare Anime',
     description: 'Anime a filmy z Webshare.cz s vyhledáváním',
     logo: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:7000'}/logo.png`,
@@ -3760,7 +3760,7 @@ app.get('/mylinks', async (req, res) => {
     htmlPage = htmlPage
         .replace(/__USERNAME__/g, JSON.stringify(username || ''))
         .replace(/__PASSWORD__/g, JSON.stringify(password || ''))
-        .replace(/__IS_ADMIN__/g, JSON.stringify(username === 'Procha'))
+        .replace(/__IS_ADMIN__/g, (username === 'Procha').toString())
         .replace(/__TMDB_KEY__/g, JSON.stringify(tmdbApiKey || ''))
         .replace(/__ADMIN_PANEL__/g, adminPanelHTML)
         .replace(/__HISTORY_CLASS__/g, username ? '' : 'hidden')
