@@ -3095,6 +3095,55 @@ app.get('/mylinks', async (req, res) => {
 
     ${adminPanelHTML}
 
+    <div id="customLinkSection" style="display: ${username ? 'block' : 'none'}; background: #16213e; border: 2px solid #9d4edd; border-radius: 10px; padding: 20px; margin: 20px 0;">
+        <h2 style="color: #9d4edd; margin-top: 0;">&#x2795; Přidat custom link</h2>
+        <p style="color: #999; font-size: 14px; margin-bottom: 15px;">Vyhledej film nebo seriál, vyber ho a přidej Webshare link.</p>
+        
+        <div style="position: relative;">
+            <div style="display: flex; gap: 10px;">
+                <input type="text" id="titleSearch" placeholder="Hledat film nebo seriál..." style="flex: 1; padding: 12px; background: #0d1b2a; border: 1px solid #9d4edd; border-radius: 5px; color: #eee; font-size: 15px;">
+                <button onclick="searchTitles()" style="padding: 12px 20px; background: #9d4edd; color: white; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; font-size: 15px;">&#x1F50D; Hledat</button>
+            </div>
+            <div id="titleResults" style="display: none; margin-top: 10px; max-height: 350px; overflow-y: auto;"></div>
+        </div>
+
+        <div id="selectedTitle" style="display: none; margin-top: 15px; padding: 15px; background: #0d1b2a; border-radius: 8px; border-left: 4px solid #9d4edd;">
+            <div style="display: flex; gap: 12px; align-items: start;">
+                <img id="selectedPoster" src="" style="width: 50px; height: 75px; object-fit: cover; border-radius: 5px; flex-shrink: 0;">
+                <div style="flex: 1;">
+                    <div id="selectedName" style="color: #9d4edd; font-weight: bold; font-size: 16px;"></div>
+                    <div id="selectedMeta" style="color: #999; font-size: 13px; margin-top: 3px;"></div>
+                    <div id="selectedImdb" style="color: #00d9ff; font-size: 12px; margin-top: 3px; font-family: monospace;"></div>
+                </div>
+                <button onclick="clearSelection()" style="padding: 5px 10px; background: #444; color: white; border: none; border-radius: 3px; cursor: pointer; font-size: 12px; flex-shrink: 0;">&#x2716; Zrušit</button>
+            </div>
+
+            <div id="episodeFields" style="display: none; margin-top: 12px; gap: 10px;">
+                <div style="flex: 1;">
+                    <label style="color: #9d4edd; font-size: 13px; margin-bottom: 4px; display: block;">Série (sezóna)</label>
+                    <input type="number" id="customSeason" min="1" value="1" style="width: 100%; padding: 8px; background: #1a1a2e; border: 1px solid #9d4edd; border-radius: 4px; color: #eee; font-size: 14px;">
+                </div>
+                <div style="flex: 1;">
+                    <label style="color: #9d4edd; font-size: 13px; margin-bottom: 4px; display: block;">Díl (epizoda)</label>
+                    <input type="number" id="customEpisode" min="1" value="1" style="width: 100%; padding: 8px; background: #1a1a2e; border: 1px solid #9d4edd; border-radius: 4px; color: #eee; font-size: 14px;">
+                </div>
+            </div>
+
+            <div style="margin-top: 12px;">
+                <label style="color: #9d4edd; font-size: 13px; margin-bottom: 4px; display: block;">Popis linku (např. "Frieren EP1 CZ dabing 1080p")</label>
+                <input type="text" id="customDisplayName" placeholder="Název souboru / popis" style="width: 100%; padding: 10px; background: #1a1a2e; border: 1px solid #9d4edd; border-radius: 4px; color: #eee; font-size: 14px; box-sizing: border-box;">
+            </div>
+
+            <div style="margin-top: 10px;">
+                <label style="color: #9d4edd; font-size: 13px; margin-bottom: 4px; display: block;">Webshare link nebo ident</label>
+                <input type="text" id="customWebshareLink" placeholder="https://webshare.cz/#/file/xxx nebo ident" style="width: 100%; padding: 10px; background: #1a1a2e; border: 1px solid #9d4edd; border-radius: 4px; color: #eee; font-size: 14px; box-sizing: border-box;">
+            </div>
+
+            <button onclick="submitCustomLink()" style="margin-top: 12px; width: 100%; padding: 12px; background: #9d4edd; color: white; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; font-size: 15px;">&#x1F4BE; Uložit link</button>
+            <p id="customMsg" style="margin-top: 8px; display: none;"></p>
+        </div>
+    </div>
+
     <div id="historySection" class="${historyClass}">
         <div id="loadingMsg" style="text-align: center; padding: 20px; ${loadingStyle}">
             <p style="color: #00d9ff; font-size: 18px;">&#x23F3; Načítám vaši historii vyhledávání...</p>
@@ -3109,6 +3158,174 @@ app.get('/mylinks', async (req, res) => {
         var currentPassword = ${JSON.stringify(password || '')};
         var currentIsAdmin = ${isAdminUser};
         var tmdbApiKey = ${JSON.stringify(tmdbApiKey || '')};
+
+        // === CUSTOM LINK STATE ===
+        var selectedImdbId = null;
+        var selectedType = null;
+        var selectedTitleName = null;
+        var selectedPosterUrl = null;
+        var searchTimeout = null;
+
+        // Enter key handler pro title search
+        (function() {
+            var el = document.getElementById('titleSearch');
+            if (el) { el.addEventListener('keydown', function(e) { if (e.key === 'Enter') searchTitles(); }); }
+        })();
+
+        async function searchTitles() {
+            var input = document.getElementById('titleSearch');
+            var query = input ? input.value.trim() : '';
+            if (query.length < 2) return;
+
+            var resultsDiv = document.getElementById('titleResults');
+            resultsDiv.style.display = 'block';
+            resultsDiv.innerHTML = '<p style="color:#9d4edd;text-align:center;padding:15px;">Hledám...</p>';
+
+            try {
+                var response = await fetch('/api/search-titles', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ query: query, tmdb_api_key: tmdbApiKey })
+                });
+                var data = await response.json();
+
+                if (!data.results || data.results.length === 0) {
+                    resultsDiv.innerHTML = '<p style="color:#999;text-align:center;padding:15px;">Nic nenalezeno. Zkus jiný název.</p>';
+                    return;
+                }
+
+                resultsDiv.innerHTML = data.results.map(function(item, idx) {
+                    var posterSrc = item.poster || 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="40" height="60" fill="%23444"><rect width="40" height="60"/><text x="12" y="35" fill="%23999" font-size="14">?</text></svg>');
+                    var typeLabel = item.type === 'movie' ? '\\uD83C\\uDFAC Film' : '\\uD83D\\uDCFA Seriál';
+                    var origName = item.original_name ? ' <span style="color:#666;">(' + item.original_name + ')</span>' : '';
+                    return '<div onclick="selectTitle(' + idx + ')" style="display:flex;gap:10px;align-items:center;padding:10px;margin:4px 0;background:#0d1b2a;border-radius:6px;cursor:pointer;border:1px solid transparent;transition:border-color 0.2s;" onmouseover="this.style.borderColor=\\'#9d4edd\\'" onmouseout="this.style.borderColor=\\'transparent\\'">' +
+                        '<img src="' + posterSrc + '" style="width:40px;height:60px;object-fit:cover;border-radius:4px;flex-shrink:0;" onerror="this.style.display=\\'none\\'">' +
+                        '<div style="flex:1;min-width:0;">' +
+                            '<div style="color:#eee;font-weight:bold;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + item.name + origName + '</div>' +
+                            '<div style="color:#999;font-size:12px;">' + typeLabel + ' &bull; ' + (item.year || '?') + ' &bull; <span style="color:#00d9ff;">' + item.imdb_id + '</span></div>' +
+                        '</div>' +
+                    '</div>';
+                }).join('');
+
+                // Uložit výsledky globálně pro selectTitle
+                window._searchResults = data.results;
+
+            } catch (error) {
+                resultsDiv.innerHTML = '<p style="color:#ff4444;text-align:center;padding:15px;">Chyba: ' + error.message + '</p>';
+            }
+        }
+
+        function selectTitle(idx) {
+            var item = window._searchResults[idx];
+            if (!item) return;
+
+            selectedImdbId = item.imdb_id;
+            selectedType = item.type;
+            selectedTitleName = item.name;
+            selectedPosterUrl = item.poster;
+
+            // Vyplnit selected panel
+            var posterEl = document.getElementById('selectedPoster');
+            if (item.poster) { posterEl.src = item.poster; posterEl.style.display = 'block'; }
+            else { posterEl.style.display = 'none'; }
+
+            document.getElementById('selectedName').textContent = item.name;
+            var typeLabel = item.type === 'movie' ? 'Film' : 'Seriál';
+            document.getElementById('selectedMeta').textContent = typeLabel + ' \\u2022 ' + (item.year || '?');
+            document.getElementById('selectedImdb').textContent = item.imdb_id;
+
+            // Zobrazit/skrýt epizodu pole
+            var episodeFields = document.getElementById('episodeFields');
+            if (item.type === 'series') {
+                episodeFields.style.display = 'flex';
+            } else {
+                episodeFields.style.display = 'none';
+            }
+
+            // Zobrazit selected panel, skrýt výsledky
+            document.getElementById('selectedTitle').style.display = 'block';
+            document.getElementById('titleResults').style.display = 'none';
+
+            // Auto-focus na display name
+            document.getElementById('customDisplayName').focus();
+        }
+
+        function clearSelection() {
+            selectedImdbId = null;
+            selectedType = null;
+            selectedTitleName = null;
+            selectedPosterUrl = null;
+            document.getElementById('selectedTitle').style.display = 'none';
+            document.getElementById('titleResults').style.display = 'none';
+            document.getElementById('customDisplayName').value = '';
+            document.getElementById('customWebshareLink').value = '';
+            document.getElementById('customSeason').value = '1';
+            document.getElementById('customEpisode').value = '1';
+            var msgEl = document.getElementById('customMsg');
+            if (msgEl) msgEl.style.display = 'none';
+        }
+
+        function showCustomMsg(msg, type) {
+            var el = document.getElementById('customMsg');
+            if (el) {
+                el.textContent = msg;
+                el.style.display = 'block';
+                el.style.color = type === 'success' ? '#00ff00' : type === 'error' ? '#ff4444' : '#00d9ff';
+            }
+        }
+
+        async function submitCustomLink() {
+            if (!selectedImdbId || !selectedTitleName) {
+                showCustomMsg('Nejprve vyber film nebo seriál!', 'error');
+                return;
+            }
+
+            var displayName = document.getElementById('customDisplayName').value.trim();
+            var webshareLink = document.getElementById('customWebshareLink').value.trim();
+
+            if (!displayName) { showCustomMsg('Zadej popis linku!', 'error'); return; }
+            if (!webshareLink) { showCustomMsg('Zadej Webshare link nebo ident!', 'error'); return; }
+
+            // Sestavit query klíč ve formátu, který addon používá
+            var queryKey = selectedImdbId + ': ' + selectedTitleName;
+
+            if (selectedType === 'series') {
+                var season = parseInt(document.getElementById('customSeason').value) || 1;
+                var episode = parseInt(document.getElementById('customEpisode').value) || 1;
+                var seasonEp = 'S' + String(season).padStart(2, '0') + 'E' + String(episode).padStart(2, '0');
+                queryKey = selectedImdbId + ': ' + selectedTitleName + ' ' + seasonEp;
+            }
+
+            showCustomMsg('Kontroluji a ukládám link...', 'info');
+
+            try {
+                var response = await fetch('/api/mylinks/add', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        username: currentUser,
+                        password: currentPassword,
+                        query: queryKey,
+                        link: webshareLink,
+                        display_name: displayName,
+                        poster: selectedPosterUrl
+                    })
+                });
+                var data = await response.json();
+
+                if (data.success) {
+                    showCustomMsg('Link uložen! Zobrazí se v addonu i v historii.', 'success');
+                    document.getElementById('customWebshareLink').value = '';
+                    document.getElementById('customDisplayName').value = '';
+                    // Refresh historii po 2s
+                    setTimeout(function() { if (currentUser) loadHistory(currentUser); }, 2000);
+                } else {
+                    showCustomMsg(data.error || 'Chyba při ukládání', 'error');
+                }
+            } catch (error) {
+                showCustomMsg('Chyba: ' + error.message, 'error');
+            }
+        }
 
         // Auto-load historie pokud máme username z configu
         if (currentUser) {
@@ -3570,6 +3787,113 @@ app.get('/mylinks', async (req, res) => {
     res.send(htmlPage);
 });
 
+// API endpoint - vyhledat filmy/seriály přes Cinemeta (pro přidávání custom linků)
+app.post('/api/search-titles', async (req, res) => {
+    try {
+        const { query, tmdb_api_key } = req.body;
+        
+        if (!query || query.trim().length < 2) {
+            return res.json({ results: [] });
+        }
+        
+        console.log('🔍 Search titles:', query);
+        const results = [];
+        
+        // Hledáme přes TMDB pokud máme klíč
+        if (tmdb_api_key) {
+            try {
+                const tmdbUrl = `https://api.themoviedb.org/3/search/multi?api_key=${tmdb_api_key}&query=${encodeURIComponent(query)}&language=cs-CZ&page=1`;
+                const tmdbResp = await needle('get', tmdbUrl, { timeout: 5000 });
+                
+                if (tmdbResp.statusCode === 200 && tmdbResp.body && tmdbResp.body.results) {
+                    for (const item of tmdbResp.body.results.slice(0, 10)) {
+                        // Pouze filmy a seriály
+                        if (item.media_type !== 'movie' && item.media_type !== 'tv') continue;
+                        
+                        const type = item.media_type === 'movie' ? 'movie' : 'series';
+                        const name = item.title || item.name || '';
+                        const originalName = item.original_title || item.original_name || '';
+                        const year = (item.release_date || item.first_air_date || '').substring(0, 4);
+                        const poster = item.poster_path ? `https://image.tmdb.org/t/p/w200${item.poster_path}` : null;
+                        const tmdbId = item.id;
+                        
+                        // Potřebujeme IMDB ID - další dotaz na TMDB
+                        let imdbId = null;
+                        try {
+                            const endpoint = type === 'movie' 
+                                ? `https://api.themoviedb.org/3/movie/${tmdbId}/external_ids?api_key=${tmdb_api_key}`
+                                : `https://api.themoviedb.org/3/tv/${tmdbId}/external_ids?api_key=${tmdb_api_key}`;
+                            const idsResp = await needle('get', endpoint, { timeout: 3000 });
+                            if (idsResp.body && idsResp.body.imdb_id) {
+                                imdbId = idsResp.body.imdb_id;
+                            }
+                        } catch (e) {
+                            console.log('Failed to get IMDB ID for TMDB', tmdbId);
+                        }
+                        
+                        if (!imdbId) continue; // Bez IMDB ID nemůžeme propojit s addonem
+                        
+                        results.push({
+                            imdb_id: imdbId,
+                            name: name,
+                            original_name: originalName !== name ? originalName : null,
+                            year: year,
+                            type: type,
+                            poster: poster
+                        });
+                    }
+                }
+            } catch (tmdbErr) {
+                console.error('TMDB search error:', tmdbErr.message);
+            }
+        }
+        
+        // Fallback na Cinemeta pokud nemáme TMDB nebo nemáme výsledky
+        if (results.length === 0) {
+            try {
+                // Cinemeta search pro filmy
+                const movieResp = await needle('get', `https://v3-cinemeta.strem.io/catalog/movie/top/search=${encodeURIComponent(query)}.json`, { timeout: 5000 });
+                if (movieResp.body && movieResp.body.metas) {
+                    for (const meta of movieResp.body.metas.slice(0, 5)) {
+                        results.push({
+                            imdb_id: meta.id,
+                            name: meta.name,
+                            original_name: null,
+                            year: meta.releaseInfo || '',
+                            type: 'movie',
+                            poster: meta.poster || null
+                        });
+                    }
+                }
+                
+                // Cinemeta search pro seriály
+                const seriesResp = await needle('get', `https://v3-cinemeta.strem.io/catalog/series/top/search=${encodeURIComponent(query)}.json`, { timeout: 5000 });
+                if (seriesResp.body && seriesResp.body.metas) {
+                    for (const meta of seriesResp.body.metas.slice(0, 5)) {
+                        results.push({
+                            imdb_id: meta.id,
+                            name: meta.name,
+                            original_name: null,
+                            year: meta.releaseInfo || '',
+                            type: 'series',
+                            poster: meta.poster || null
+                        });
+                    }
+                }
+            } catch (cinemetaErr) {
+                console.error('Cinemeta search error:', cinemetaErr.message);
+            }
+        }
+        
+        console.log(`Found ${results.length} title results for "${query}"`);
+        res.json({ results });
+        
+    } catch (error) {
+        console.error('Search titles error:', error);
+        res.json({ results: [], error: 'Server error' });
+    }
+});
+
 // API endpoint - získat historii vyhledávání uživatele (BEZ ověření hesla)
 app.post('/api/mylinks/history', async (req, res) => {
     console.log('📥 POST /api/mylinks/history - Request received');
@@ -3598,7 +3922,7 @@ app.post('/api/mylinks/history', async (req, res) => {
 // API endpoint - přidat manuální link
 app.post('/api/mylinks/add', async (req, res) => {
     try {
-        const { username, password, query, link, display_name } = req.body;
+        const { username, password, query, link, display_name, poster: bodyPoster } = req.body;
         
         if (!username || !query || !link || !display_name) {
             return res.json({ error: 'Missing data', success: false });
@@ -3656,12 +3980,39 @@ app.post('/api/mylinks/add', async (req, res) => {
             }
         }
         
-        // Zkusit získat poster z query (pokud obsahuje tt/kitsu)
-        let poster = null;
-        if (query.includes('tt')) {
+        // Poster - preferovat z body, fallback na IMDB
+        let poster = bodyPoster || null;
+        if (!poster && query.includes('tt')) {
             const ttMatch = query.match(/tt(\d+)/);
             if (ttMatch) {
-                poster = `https://img.omdbapi.com/?i=tt${ttMatch[1]}&apikey=placeholder`;
+                try {
+                    const metaResp = await needle('get', `https://v3-cinemeta.strem.io/meta/movie/tt${ttMatch[1]}.json`, { timeout: 3000 });
+                    poster = metaResp.body?.meta?.poster || null;
+                } catch (e) { /* ignore */ }
+            }
+        }
+        
+        // Pokud přidáváme custom link (ne z historie), zalogovat i do user-searches aby se zobrazil v historii
+        if (query.match(/^tt\d+:/) && username) {
+            try {
+                const userKey = `user-searches/${username}.json`;
+                let userSearches = await getFromR2(userKey) || {};
+                if (!userSearches[query]) {
+                    userSearches[query] = {
+                        count: 0,
+                        first_search: new Date().toISOString(),
+                        last_search: new Date().toISOString(),
+                        results_count: 0,
+                        poster: poster
+                    };
+                    await putToR2(userKey, userSearches);
+                    console.log(`📝 Created history entry for custom link: "${query}"`);
+                } else if (poster && !userSearches[query].poster) {
+                    userSearches[query].poster = poster;
+                    await putToR2(userKey, userSearches);
+                }
+            } catch (e) {
+                console.error('Failed to create history entry:', e.message);
             }
         }
         
