@@ -4567,10 +4567,12 @@ app.post('/api/mylinks/add', async (req, res) => {
         }
         
         // Pokud přidáváme custom link (ne z historie), zalogovat i do user-searches aby se zobrazil v historii
+        console.log(`History check: query="${query}", username="${username}", match=${!!query.match(/^tt\d+:/)}`);
         if (query.match(/^tt\d+:/) && username) {
             try {
                 const userKey = `user-searches/${username}.json`;
                 let userSearches = await getFromR2(userKey) || {};
+                console.log(`History entries: ${Object.keys(userSearches).length}, exists: ${!!userSearches[query]}`);
                 if (!userSearches[query]) {
                     userSearches[query] = {
                         count: 0,
@@ -4592,7 +4594,12 @@ app.post('/api/mylinks/add', async (req, res) => {
                         userSearches[query].display_name = title_name;
                         updated = true;
                     }
-                    if (updated) await putToR2(userKey, userSearches);
+                    if (updated) {
+                        await putToR2(userKey, userSearches);
+                        console.log(`📝 Updated history entry: "${query}"`);
+                    } else {
+                        console.log(`ℹ️ History entry already exists and up to date: "${query}"`);
+                    }
                 }
             } catch (e) {
                 console.error('Failed to create history entry:', e.message);
