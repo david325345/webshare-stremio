@@ -3052,9 +3052,9 @@ app.get('/mylinks', async (req, res) => {
     const historyClass = username ? '' : 'hidden';
     const loadingStyle = username ? '' : 'display: none;';
     
-    // Build admin panel HTML if user is admin
-    const adminPanelHTML = isAdminUser ? `
-    <div style="background: #2d1b00; border: 2px solid #ff9500; border-radius: 10px; padding: 20px; margin: 20px 0;">
+    // Build admin panel HTML - always present but hidden if not admin (can be shown after login)
+    const adminPanelHTML = `
+    <div id="adminPanel" style="display: ${isAdminUser ? 'block' : 'none'}; background: #2d1b00; border: 2px solid #ff9500; border-radius: 10px; padding: 20px; margin: 20px 0;">
         <h2 style="color: #ff9500; margin-top: 0;">&#x1F451; Admin Panel</h2>
         <div style="display: flex; gap: 10px; margin-top: 15px; flex-wrap: wrap; align-items: stretch;">
             <button onclick="downloadBackup()" style="flex: 1; min-width: 150px; padding: 12px; background: #00d9ff; color: #1a1a2e; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; font-size: 14px; margin: 0;">
@@ -3089,7 +3089,7 @@ app.get('/mylinks', async (req, res) => {
             <div id="brokenLinksList"></div>
             <button onclick="hideBrokenLinks()" style="margin-top: 10px; padding: 8px 16px; background: #444; color: white; border: none; border-radius: 5px; cursor: pointer;">Zavřít</button>
         </div>
-    </div>` : '';
+    </div>`;
 
     const htmlPage = `<!DOCTYPE html>
 <html>
@@ -3708,6 +3708,21 @@ app.get('/mylinks', async (req, res) => {
                 if (layout) layout.style.display = 'flex';
                 showHistory(data.searches);
                 loadMyCustomLinks();
+
+                // Zkontrolovat admin status
+                try {
+                    var adminResp = await fetch('/api/mylinks/check-admin', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ username: username })
+                    });
+                    var adminData = await adminResp.json();
+                    if (adminData.isAdmin) {
+                        currentIsAdmin = true;
+                        var panel = document.getElementById('adminPanel');
+                        if (panel) panel.style.display = 'block';
+                    }
+                } catch (e) { /* ignore */ }
             } catch (error) {
                 showLoginError('Chyba připojení: ' + error.message);
             }
@@ -4067,6 +4082,18 @@ app.get('/mylinks', async (req, res) => {
 });
 
 // API endpoint - vyhledat filmy/seriály přes Cinemeta (pro přidávání custom linků)
+// API endpoint - zkontrolovat admin status uživatele
+app.post('/api/mylinks/check-admin', async (req, res) => {
+    try {
+        const { username } = req.body;
+        if (!username) return res.json({ isAdmin: false });
+        const admin = await isAdmin(username);
+        res.json({ isAdmin: admin });
+    } catch (error) {
+        res.json({ isAdmin: false });
+    }
+});
+
 app.post('/api/search-titles', async (req, res) => {
     try {
         const { query, tmdb_api_key } = req.body;
