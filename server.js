@@ -1096,12 +1096,16 @@ async function handleStreamRequest(args) {
             if (tmdbNames.length > 0) {
                 console.log('TMDB found:', tmdbNames);
                 
-                // Pro japonský obsah (anime) použijeme JEN anglický název
+                // Pro japonský obsah (anime) použijeme anglický název + CZ/romaji z TMDB
                 if (isJapaneseContent) {
-                    console.log('Detected Japanese content - using only English name from TMDB');
+                    console.log('Detected Japanese content - using English name + romaji from TMDB');
                     // Poslední název je anglický (z EN query)
                     const englishName = tmdbNames[tmdbNames.length - 1];
                     names = [englishName];
+                    // Přidat i CZ název z TMDB (pro anime to bývá romaji, např. "Sósó no Frieren")
+                    if (tmdbNames.length > 1 && tmdbNames[0] !== englishName) {
+                        names.push(tmdbNames[0]);
+                    }
                 } else {
                     // Běžný obsah - použijeme všechny názvy (CZ + EN)
                     names = tmdbNames;
@@ -1201,14 +1205,14 @@ async function handleStreamRequest(args) {
                 
                 console.log(`Similarity check: ${bestSimilarity.toFixed(2)} (best match: "${bestMatchName}")`);
                 
-                // Kontrola roku - PŘESNÝ rok pro filmy i seriály
+                // Kontrola roku - pro anime tolerujeme větší rozdíl (AniList často vrací rok poslední série)
                 let yearMatch = true;
                 if (anilistYear && cinemataYear) {
                     const yearDiff = Math.abs(anilistYear - cinemataYear);
                     console.log(`Year difference: ${yearDiff} years (AniList: ${anilistYear}, Source: ${cinemataYear})`);
                     
-                    // Vyžadujeme přesný rok (0 rozdíl)
-                    if (yearDiff > 0) {
+                    // Tolerujeme 3 roky rozdíl (anime mají více sérií s různými roky)
+                    if (yearDiff > 3) {
                         console.log(`Year difference too large - probably not the same content`);
                         yearMatch = false;
                     }
@@ -1346,21 +1350,45 @@ async function handleStreamRequest(args) {
                         const nameWithOu = cleanNameNoSuffix.replace(/o([aeiou])/gi, 'ou$1');
                         const hasOuVariant = nameWithOu !== cleanNameNoSuffix;
                         
+                        // Varianta pro japonské dlouhé samohlásky: ō→ou, ū→uu
+                        // TMDB dává např. "Sósó" → po NFD normalizaci "Soso" → potřebujeme "Sousou"
+                        // Zjistíme jestli originální název obsahuje dlouhé samohlásky (ō, ū, ā)
+                        const origNFD = name.normalize('NFD');
+                        const hasLongVowels = /[oōuūaā]\u0301/i.test(origNFD) || /[ōūā]/i.test(name);
+                        let longVowelVariant = null;
+                        if (hasLongVowels || isJapaneseContent) {
+                            // Zkusíme o→ou, u→uu variantu na pozicích kde byl accent
+                            // Jednodušší přístup: pro každé 'o' v romaji přidáme 'ou' variantu
+                            const lvName = name.normalize('NFD')
+                                .replace(/o\u0301/gi, 'ou')  // ó → ou
+                                .replace(/u\u0301/gi, 'uu')  // ú → uu
+                                .replace(/a\u0301/gi, 'aa')  // á → aa (vzácné v JP)
+                                .replace(/[\u0300-\u036f]/g, '') // odstranit zbylou diakritiku
+                                .replace(/\//g, ' ')
+                                .replace(/[!?:\*]/g, '');
+                            if (lvName !== cleanName) {
+                                longVowelVariant = lvName;
+                            }
+                        }
+                        
                         // Standardní formát S01E04
                         searchQueries.push(`${cleanName} ${seasonEp}`);
                         searchQueries.push(`${cleanNameNoSuffix} ${seasonEp}`);
                         if (hasOuVariant) searchQueries.push(`${nameWithOu} ${seasonEp}`);
+                        if (longVowelVariant) searchQueries.push(`${longVowelVariant} ${seasonEp}`);
                         
                         // Pouze epizoda E04
                         searchQueries.push(`${cleanName} ${episodeOnly}`);
                         searchQueries.push(`${cleanNameNoSuffix} ${episodeOnly}`);
                         if (hasOuVariant) searchQueries.push(`${nameWithOu} ${episodeOnly}`);
+                        if (longVowelVariant) searchQueries.push(`${longVowelVariant} ${episodeOnly}`);
                         
                         // Jen číslo 01, 04 apod. (pro webshare formát)
                         const plainNumber = String(episode).padStart(2, '0');
                         searchQueries.push(`${cleanName} ${plainNumber}`);
                         searchQueries.push(`${cleanNameNoSuffix} ${plainNumber}`);
                         if (hasOuVariant) searchQueries.push(`${nameWithOu} ${plainNumber}`);
+                        if (longVowelVariant) searchQueries.push(`${longVowelVariant} ${plainNumber}`);
                         
                         // Kratší varianta - první 2 slova
                         const words = cleanNameNoSuffix.split(/\s+/);
@@ -1373,7 +1401,21 @@ async function handleStreamRequest(args) {
                     }
                 } else {
                     // Filmy nebo bez epizody
-                    searchQueries = names.map(n => n.replace(/\//g, ' ').replace(/[!?:\*]/g, ''));
+                    searchQueries = [];
+                    for (const n of names) {
+                        const clean = n.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\//g, ' ').replace(/[!?:\*]/g, '');
+                        searchQueries.push(clean);
+                        // Dlouhé samohlásky pro anime filmy
+                        if (isJapaneseContent) {
+                            const lvName = n.normalize('NFD')
+                                .replace(/o\u0301/gi, 'ou')
+                                .replace(/u\u0301/gi, 'uu')
+                                .replace(/[\u0300-\u036f]/g, '')
+                                .replace(/\//g, ' ')
+                                .replace(/[!?:\*]/g, '');
+                            if (lvName !== clean) searchQueries.push(lvName);
+                        }
+                    }
                 }
             }
         } else {
