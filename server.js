@@ -1307,20 +1307,38 @@ async function handleStreamRequest(args) {
                         const nameWithOu = cleanNameNoSuffix.replace(/o([aeiou])/gi, 'ou$1');
                         const hasOuVariant = nameWithOu !== cleanNameNoSuffix;
                         
+                        // Varianta pro japonské dlouhé samohlásky: ō→ou, ū→uu
+                        let longVowelVariant = null;
+                        if (isJapaneseContent) {
+                            const lvName = name.normalize('NFD')
+                                .replace(/o\u0301/gi, 'ou')
+                                .replace(/u\u0301/gi, 'uu')
+                                .replace(/a\u0301/gi, 'aa')
+                                .replace(/[\u0300-\u036f]/g, '')
+                                .replace(/\//g, ' ')
+                                .replace(/[!?:\*]/g, '');
+                            if (lvName !== cleanName) {
+                                longVowelVariant = lvName;
+                            }
+                        }
+                        
                         searchQueries.push(`${cleanName} ${seasonEp}`);
                         searchQueries.push(`${cleanNameNoSuffix} ${seasonEp}`);
                         if (hasOuVariant) searchQueries.push(`${nameWithOu} ${seasonEp}`);
+                        if (longVowelVariant) searchQueries.push(`${longVowelVariant} ${seasonEp}`);
                         
                         // Jen epizoda
                         searchQueries.push(`${cleanName} ${episodeOnly}`);
                         searchQueries.push(`${cleanNameNoSuffix} ${episodeOnly}`);
                         if (hasOuVariant) searchQueries.push(`${nameWithOu} ${episodeOnly}`);
+                        if (longVowelVariant) searchQueries.push(`${longVowelVariant} ${episodeOnly}`);
                         
                         // Jen číslo
                         const plainNumber = String(episode).padStart(2, '0');
                         searchQueries.push(`${cleanName} ${plainNumber}`);
                         searchQueries.push(`${cleanNameNoSuffix} ${plainNumber}`);
                         if (hasOuVariant) searchQueries.push(`${nameWithOu} ${plainNumber}`);
+                        if (longVowelVariant) searchQueries.push(`${longVowelVariant} ${plainNumber}`);
                         
                         // Kratší varianta - první 2 slova
                         const words = cleanNameNoSuffix.split(/\s+/);
@@ -1332,8 +1350,21 @@ async function handleStreamRequest(args) {
                         }
                     }
                 } else {
-                    // Jen první 3 názvy
-                    searchQueries = names.slice(0, 3).map(n => n.replace(/\//g, ' ').replace(/[!?:\*]/g, ''));
+                    // Jen první 3 názvy + long vowel varianty
+                    searchQueries = [];
+                    for (const n of names.slice(0, 3)) {
+                        const clean = n.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\//g, ' ').replace(/[!?:\*]/g, '');
+                        searchQueries.push(clean);
+                        if (isJapaneseContent) {
+                            const lvName = n.normalize('NFD')
+                                .replace(/o\u0301/gi, 'ou')
+                                .replace(/u\u0301/gi, 'uu')
+                                .replace(/[\u0300-\u036f]/g, '')
+                                .replace(/\//g, ' ')
+                                .replace(/[!?:\*]/g, '');
+                            if (lvName !== clean) searchQueries.push(lvName);
+                        }
+                    }
                 }
             } else {
                 // Jeden nebo více názvů (z TMDB nebo Cinemeta)
