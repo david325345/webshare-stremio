@@ -3304,7 +3304,7 @@ app.get('/mylinks', async (req, res) => {
                     titleName = titleName.replace(/^kitsu:\\d+:\\s*/, '');
                 }
 
-                var eQ = encodeURIComponent(item.query);
+                var eQ = encodeURIComponent(item.query).replace(/'/g, '%27');
                 var delBtn = '<span onclick="deleteSidebarLink(decodeURIComponent(\\'' + eQ + '\\'), ' + item.idx + ')" style="color:#ff4444;cursor:pointer;font-size:11px;float:right;" title="Smazat">\\u2716</span>';
 
                 html += '<div style="background:#0d1b2a;padding:8px 10px;margin-bottom:6px;border-radius:6px;border-left:3px solid ' + borderCol + ';position:relative;">' +
@@ -3709,7 +3709,7 @@ app.get('/mylinks', async (req, res) => {
                         var dateInfo = new Date(manual.added_at).toLocaleDateString('cs-CZ');
                         var brokenInfo = isBroken ? ' &bull; <span style="color:#ff4444;">Nefunguje od: ' + new Date(manual.last_checked).toLocaleDateString('cs-CZ') + '</span>' : '';
 
-                        var eQuery = encodeURIComponent(query);
+                        var eQuery = encodeURIComponent(query).replace(/'/g, '%27');
                         var delBtn = (isOwner || currentIsAdmin) ?
                             '<button onclick="deleteLink(decodeURIComponent(\\'' + eQuery + '\\'), ' + idx + ', \\'' + eQuery + '\\')" style="position:absolute;top:10px;right:10px;padding:5px 10px;background:#ff4444;color:white;border:none;border-radius:3px;cursor:pointer;font-size:12px;">\\uD83D\\uDDD1\\uFE0F Smazat</button>' : '';
 
@@ -3720,7 +3720,7 @@ app.get('/mylinks', async (req, res) => {
                     }).filter(Boolean).join('');
                 }
 
-                var eQ = encodeURIComponent(query);
+                var eQ = encodeURIComponent(query).replace(/'/g, '%27');
                 return '<div class="search-item" style="display:flex;gap:15px;align-items:start;">' +
                     '<img src="' + posterUrl + '" alt="Poster" style="width:60px;height:90px;object-fit:cover;border-radius:8px;flex-shrink:0;background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);" onerror="this.style.display=\\'none\\';this.nextElementSibling.style.display=\\'flex\\';">' +
                     '<div style="width:60px;height:90px;background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);border-radius:8px;display:none;align-items:center;justify-content:center;font-size:32px;flex-shrink:0;">\\uD83C\\uDFAC</div>' +
@@ -3885,7 +3885,7 @@ app.get('/mylinks', async (req, res) => {
                     list.innerHTML = '<p style="color:#00ff00;">Žádné nefunkční linky!</p>';
                 } else {
                     list.innerHTML = brokenLinks.map(function(item) {
-                        var eQ = encodeURIComponent(item.query);
+                        var eQ = encodeURIComponent(item.query).replace(/'/g, '%27');
                         return '<div style="background:#0d1b2a;padding:10px;margin:10px 0;border-radius:5px;border-left:4px solid #ff4444;">' +
                             '<strong style="color:#fff;">' + item.query + '</strong><br>' +
                             '<span style="color:#00d9ff;">' + item.link.display_name + '</span><br>' +
