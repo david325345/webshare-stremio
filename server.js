@@ -247,7 +247,7 @@ async function putToR2(key, data) {
     }
 }
 
-async function logSearch(username, query, resultsCount, imdbId, type) {
+async function logSearch(username, query, resultsCount, imdbId, type, displayName) {
     try {
         const userKey = `user-searches/${username}.json`;
         let userSearches = await getFromR2(userKey) || {};
@@ -278,6 +278,10 @@ async function logSearch(username, query, resultsCount, imdbId, type) {
         userSearches[query].results_count = resultsCount;
         if (poster && !userSearches[query].poster) {
             userSearches[query].poster = poster;
+        }
+        // Uložit display name (originální název s diakritikou/romaji)
+        if (displayName && !userSearches[query].display_name) {
+            userSearches[query].display_name = displayName;
         }
         
         await putToR2(userKey, userSearches);
@@ -2371,7 +2375,24 @@ ${languages.join('+')} 📺 ${qualityStr} 💾${sizeStr}`;
             
             if (!lastLog || (now - lastLog) > SEARCH_LOG_DEBOUNCE_MS) {
                 searchLogDebounce.set(debounceKey, now);
-                logSearch(username, `${idParts[0]}: ${mainQuery}`, validStreams.length, imdbId, type).catch(err => {
+                // Sestavit display name z originálního TMDB názvu
+                let displayName = null;
+                if (typeof tmdbNames !== 'undefined' && tmdbNames && tmdbNames.length > 0) {
+                    // Pro anime: anglický název (romaji přepis), pro ostatní: CZ název s diakritikou
+                    if (typeof isJapaneseContent !== 'undefined' && isJapaneseContent && tmdbNames.length > 1) {
+                        displayName = tmdbNames[tmdbNames.length - 1]; // EN název např. "Frieren: Beyond Journey's End"
+                    } else {
+                        displayName = tmdbNames[0]; // CZ název např. "Pelíšky"
+                    }
+                    // Přidat epizodu pokud je seriál
+                    if (args.type === 'series' && args.id.includes(':')) {
+                        const ep = args.id.split(':');
+                        if (ep[1] && ep[2]) {
+                            displayName += ' S' + String(ep[1]).padStart(2, '0') + 'E' + String(ep[2]).padStart(2, '0');
+                        }
+                    }
+                }
+                logSearch(username, `${idParts[0]}: ${mainQuery}`, validStreams.length, imdbId, type, displayName).catch(err => {
                     console.error('R2 logging failed:', err.message);
                 });
             } else {
@@ -3849,10 +3870,13 @@ app.get('/mylinks', async (req, res) => {
                 var title = query;
                 var posterUrl = stats.poster || 'https://via.placeholder.com/60x90/667eea/ffffff?text=?';
 
-                if (query.match(/tt\\d+/)) {
+                // Použít display_name (originální název s diakritikou/romaji) pokud existuje
+                if (stats.display_name) {
+                    title = stats.display_name;
+                } else if (query.match(/tt\\d+/)) {
                     title = query.replace(/^tt\\d+:\\s*/, '');
                 }
-                if (query.includes('kitsu:')) {
+                if (!stats.display_name && query.includes('kitsu:')) {
                     title = query.replace(/^kitsu:\\d+:\\s*/, '');
                 }
 
