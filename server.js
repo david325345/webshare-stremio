@@ -1570,12 +1570,12 @@ async function handleStreamRequest(args) {
                         if (nameUpper.includes('SK') || nameUpper.includes('SLOVAK')) languages.push('🇸🇰 SK');
                         if (nameUpper.includes('EN') || nameUpper.includes('ENGLISH')) languages.push('🇬🇧 EN');
                         
-                        const streamName = `Webshare.cz
+                        const streamName = `📌 Webshare
 ${languages.join('+')} 📺 ${qualityStr} 💾${sizeStr}`;
                         
                         const stream = {
                             name: streamName,
-                            title: `📌 ${manual.display_name || fileInfo.name || 'Manuální link'}`,
+                            title: `${manual.display_name || fileInfo.name || 'Manuální link'}\n${fileInfo.name}`,
                             url: link,
                             behaviorHints: {
                                 bingeGroup: 'webshare-manual',
@@ -3391,6 +3391,12 @@ app.get('/mylinks', async (req, res) => {
         var currentIsAdmin = ${isAdminUser};
         var tmdbApiKey = ${JSON.stringify(tmdbApiKey || '')};
 
+        // === REGEX pro čištění názvů (pre-compiled, bezpečné v template literal) ===
+        var _diacriticsRe = new RegExp('[' + String.fromCharCode(0x0300) + '-' + String.fromCharCode(0x036f) + ']', 'g');
+        var _slashRe = new RegExp(String.fromCharCode(47), 'g');
+        var _specialCharsRe = new RegExp('[!?:*]', 'g');
+        var _multiSpaceRe = new RegExp(String.fromCharCode(92) + 's+', 'g');
+
         // === CUSTOM LINK STATE ===
         var selectedImdbId = null;
         var selectedType = null;
@@ -3657,7 +3663,7 @@ app.get('/mylinks', async (req, res) => {
             // 1. Normalizace diakritiky (NFD + remove combining marks)
             // 2. Lomítka na mezery
             // 3. Odstranit !?:*
-            var cleanName = rawName.normalize('NFD').replace(new RegExp('[\\u0300-\\u036f]', 'g'), '').replace(new RegExp('/', 'g'), ' ').replace(new RegExp('[!?:*]', 'g'), '').replace(new RegExp('\\s+', 'g'), ' ').trim();
+            var cleanName = rawName.normalize('NFD').replace(_diacriticsRe, '').replace(_slashRe, ' ').replace(_specialCharsRe, '').replace(_multiSpaceRe, ' ').trim();
 
             // Sestavit query klíč ve formátu, který addon používá
             var queryKey;
@@ -3673,6 +3679,12 @@ app.get('/mylinks', async (req, res) => {
             showCustomMsg('Kontroluji a ukládám link...', 'info');
 
             try {
+                // Sestavit title_name pro display v historii (originální název s diakritikou)
+                var titleForHistory = rawName;
+                if (selectedType === 'series') {
+                    titleForHistory += ' S' + String(season).padStart(2, '0') + 'E' + String(episode).padStart(2, '0');
+                }
+
                 var response = await fetch('/api/mylinks/add', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -3682,7 +3694,8 @@ app.get('/mylinks', async (req, res) => {
                         query: queryKey,
                         link: webshareLink,
                         display_name: displayName,
-                        poster: selectedPosterUrl
+                        poster: selectedPosterUrl,
+                        title_name: titleForHistory
                     })
                 });
                 var data = await response.json();
@@ -4483,7 +4496,7 @@ app.post('/api/mylinks/history', async (req, res) => {
 // API endpoint - přidat manuální link
 app.post('/api/mylinks/add', async (req, res) => {
     try {
-        const { username, password, query, link, display_name, poster: bodyPoster } = req.body;
+        const { username, password, query, link, display_name, poster: bodyPoster, title_name } = req.body;
         
         if (!username || !query || !link || !display_name) {
             return res.json({ error: 'Missing data', success: false });
@@ -4564,13 +4577,22 @@ app.post('/api/mylinks/add', async (req, res) => {
                         first_search: new Date().toISOString(),
                         last_search: new Date().toISOString(),
                         results_count: 0,
-                        poster: poster
+                        poster: poster,
+                        display_name: title_name || null
                     };
                     await putToR2(userKey, userSearches);
-                    console.log(`📝 Created history entry for custom link: "${query}"`);
-                } else if (poster && !userSearches[query].poster) {
-                    userSearches[query].poster = poster;
-                    await putToR2(userKey, userSearches);
+                    console.log(`📝 Created history entry for custom link: "${query}" (display: "${title_name || ''}")`);
+                } else {
+                    let updated = false;
+                    if (poster && !userSearches[query].poster) {
+                        userSearches[query].poster = poster;
+                        updated = true;
+                    }
+                    if (title_name && !userSearches[query].display_name) {
+                        userSearches[query].display_name = title_name;
+                        updated = true;
+                    }
+                    if (updated) await putToR2(userKey, userSearches);
                 }
             } catch (e) {
                 console.error('Failed to create history entry:', e.message);
