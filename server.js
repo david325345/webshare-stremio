@@ -161,6 +161,57 @@ async function removeAdmin(username, removedBy) {
     return { success: true };
 }
 
+// === BAN SYSTEM ===
+async function getBannedUsers() {
+    return await getFromR2('banned-users.json') || [];
+}
+
+async function isBanned(username) {
+    const banned = await getBannedUsers();
+    return banned.some(b => b.username === username);
+}
+
+async function banUser(username, bannedBy, reason) {
+    if (!await isAdmin(bannedBy)) {
+        return { success: false, error: 'Pouze admin může banovat' };
+    }
+    if (await isAdmin(username)) {
+        return { success: false, error: 'Nelze banovat admina' };
+    }
+    
+    const banned = await getBannedUsers();
+    if (banned.some(b => b.username === username)) {
+        return { success: false, error: 'Uživatel je již zabanován' };
+    }
+    
+    banned.push({
+        username: username,
+        banned_by: bannedBy,
+        banned_at: new Date().toISOString(),
+        reason: reason || ''
+    });
+    await putToR2('banned-users.json', banned);
+    console.log(`🚫 User banned: ${username} by ${bannedBy} (${reason || 'no reason'})`);
+    return { success: true };
+}
+
+async function unbanUser(username, unbannedBy) {
+    if (!await isAdmin(unbannedBy)) {
+        return { success: false, error: 'Pouze admin může odbanovat' };
+    }
+    
+    const banned = await getBannedUsers();
+    const index = banned.findIndex(b => b.username === username);
+    if (index === -1) {
+        return { success: false, error: 'Uživatel není zabanován' };
+    }
+    
+    banned.splice(index, 1);
+    await putToR2('banned-users.json', banned);
+    console.log(`✅ User unbanned: ${username} by ${unbannedBy}`);
+    return { success: true };
+}
+
 // R2 Helper Functions
 async function getFromR2(key) {
     try {
@@ -927,6 +978,12 @@ async function handleStreamRequest(args) {
         if (!username || !password) {
             console.log('Missing credentials');
             return { streams: [] };
+        }
+
+        // Kontrola banu
+        if (await isBanned(username)) {
+            console.log(`🚫 Banned user attempted access: ${username}`);
+            return { streams: [{ name: '🚫 Zablokováno', title: 'Váš účet byl zablokován. Kontaktujte administrátora.', url: '#' }] };
         }
 
         // Připravíme heslo a přihlásíme se
@@ -3070,6 +3127,9 @@ app.get('/mylinks', async (req, res) => {
             <button onclick="showAdminManager()" style="flex: 1; min-width: 150px; padding: 12px; background: #ff9500; color: white; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; font-size: 14px; margin: 0;">
                 &#x1F465; Správa adminů
             </button>
+            <button onclick="showBanManager()" style="flex: 1; min-width: 150px; padding: 12px; background: #cc0000; color: white; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; font-size: 14px; margin: 0;">
+                &#x1F6AB; Správa banů
+            </button>
         </div>
         <p id="adminMessage" style="margin-top: 10px; display: none;"></p>
         <div id="adminManagerPanel" style="display: none; margin-top: 20px; padding: 15px; background: #1a0d00; border: 2px solid #ff9500; border-radius: 8px;">
@@ -3083,6 +3143,19 @@ app.get('/mylinks', async (req, res) => {
             </div>
             <p id="adminManagerMessage" style="margin-top: 10px; display: none;"></p>
             <button onclick="hideAdminManager()" style="margin-top: 15px; padding: 8px 16px; background: #444; color: white; border: none; border-radius: 5px; cursor: pointer;">Zavřít</button>
+        </div>
+        <div id="banManagerPanel" style="display: none; margin-top: 20px; padding: 15px; background: #1a0000; border: 2px solid #cc0000; border-radius: 8px;">
+            <h3 style="color: #cc0000; margin-top: 0;">&#x1F6AB; Správa banů</h3>
+            <div id="bannedList" style="margin-bottom: 15px;"></div>
+            <div style="display: flex; gap: 10px; margin-top: 15px;">
+                <input type="text" id="banUsername" placeholder="Uživatelské jméno" style="flex: 1; padding: 10px; background: #0d1b2a; color: white; border: 1px solid #cc0000; border-radius: 5px;">
+                <input type="text" id="banReason" placeholder="Důvod (nepovinné)" style="flex: 1; padding: 10px; background: #0d1b2a; color: white; border: 1px solid #cc0000; border-radius: 5px;">
+                <button onclick="doBanUser()" style="padding: 10px 20px; background: #cc0000; color: white; border: none; border-radius: 5px; cursor: pointer; font-weight: bold;">
+                    &#x1F6AB; Zabanovat
+                </button>
+            </div>
+            <p id="banManagerMessage" style="margin-top: 10px; display: none;"></p>
+            <button onclick="hideBanManager()" style="margin-top: 15px; padding: 8px 16px; background: #444; color: white; border: none; border-radius: 5px; cursor: pointer;">Zavřít</button>
         </div>
         <div id="brokenLinksPanel" style="display: none; margin-top: 20px; padding: 15px; background: #1a0d0d; border: 2px solid #ff4444; border-radius: 8px;">
             <h3 style="color: #ff4444; margin-top: 0;">&#x26A0;&#xFE0F; Nefunkční manuální linky</h3>
@@ -4070,6 +4143,98 @@ app.get('/mylinks', async (req, res) => {
             }
         }
 
+        // === BAN MANAGEMENT ===
+        async function showBanManager() {
+            document.getElementById('banManagerPanel').style.display = 'block';
+            var list = document.getElementById('bannedList');
+            list.innerHTML = '<p style="color:#999;">Načítám...</p>';
+            try {
+                var response = await fetch('/api/mylinks/banned-list', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username: currentUser })
+                });
+                var data = await response.json();
+                var banned = data.banned || [];
+                if (banned.length === 0) {
+                    list.innerHTML = '<p style="color:#00ff00;">Žádní zabanovaní uživatelé.</p>';
+                } else {
+                    list.innerHTML = banned.map(function(b) {
+                        var date = new Date(b.banned_at).toLocaleString('cs-CZ');
+                        var reason = b.reason ? ' &bull; Důvod: ' + b.reason : '';
+                        return '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 10px;margin:5px 0;background:#0d1b2a;border-radius:5px;border-left:3px solid #cc0000;">' +
+                            '<div>' +
+                                '<strong style="color:#ff6666;">' + b.username + '</strong>' +
+                                '<div style="color:#999;font-size:12px;">Zabanoval: ' + (b.banned_by || '?') + ' &bull; ' + date + reason + '</div>' +
+                            '</div>' +
+                            '<button onclick="doUnbanUser(\\'' + b.username + '\\')" style="padding:5px 12px;background:#00ff00;color:#1a1a2e;border:none;border-radius:3px;cursor:pointer;font-weight:bold;font-size:12px;">Odbanovat</button>' +
+                        '</div>';
+                    }).join('');
+                }
+            } catch (error) {
+                list.innerHTML = '<p style="color:#ff4444;">Chyba: ' + error.message + '</p>';
+            }
+        }
+
+        function hideBanManager() {
+            document.getElementById('banManagerPanel').style.display = 'none';
+        }
+
+        async function doBanUser() {
+            var nameInput = document.getElementById('banUsername');
+            var reasonInput = document.getElementById('banReason');
+            var target = nameInput ? nameInput.value.trim() : '';
+            var reason = reasonInput ? reasonInput.value.trim() : '';
+            if (!target) { showBanMgrMsg('Zadej uživatelské jméno', 'error'); return; }
+            try {
+                var response = await fetch('/api/mylinks/ban', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username: currentUser, target: target, reason: reason })
+                });
+                var data = await response.json();
+                if (data.success) {
+                    showBanMgrMsg(target + ' byl zabanován', 'success');
+                    nameInput.value = '';
+                    reasonInput.value = '';
+                    setTimeout(showBanManager, 1000);
+                } else {
+                    showBanMgrMsg(data.error, 'error');
+                }
+            } catch (error) {
+                showBanMgrMsg('Chyba: ' + error.message, 'error');
+            }
+        }
+
+        async function doUnbanUser(target) {
+            if (!confirm('Odbanovat uživatele ' + target + '?')) return;
+            try {
+                var response = await fetch('/api/mylinks/unban', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username: currentUser, target: target })
+                });
+                var data = await response.json();
+                if (data.success) {
+                    showBanMgrMsg(target + ' byl odbanován', 'success');
+                    setTimeout(showBanManager, 1000);
+                } else {
+                    showBanMgrMsg(data.error, 'error');
+                }
+            } catch (error) {
+                showBanMgrMsg('Chyba: ' + error.message, 'error');
+            }
+        }
+
+        function showBanMgrMsg(msg, type) {
+            var el = document.getElementById('banManagerMessage');
+            if (el) {
+                el.textContent = msg;
+                el.style.display = 'block';
+                el.style.color = type === 'success' ? '#00ff00' : '#ff0000';
+            }
+        }
+
         function showMessage(encodedQuery, msg, type) {
             var el = document.getElementById('msg_' + encodedQuery);
             if (el) { el.textContent = msg; el.className = type; }
@@ -4091,6 +4256,48 @@ app.post('/api/mylinks/check-admin', async (req, res) => {
         res.json({ isAdmin: admin });
     } catch (error) {
         res.json({ isAdmin: false });
+    }
+});
+
+// API endpoint - seznam zabanovaných uživatelů
+app.post('/api/mylinks/banned-list', async (req, res) => {
+    try {
+        const { username } = req.body;
+        if (!username || !await isAdmin(username)) {
+            return res.json({ error: 'Přístup odepřen', banned: [] });
+        }
+        const banned = await getBannedUsers();
+        res.json({ banned });
+    } catch (error) {
+        res.json({ error: 'Server error', banned: [] });
+    }
+});
+
+// API endpoint - zabanovat uživatele
+app.post('/api/mylinks/ban', async (req, res) => {
+    try {
+        const { username, target, reason } = req.body;
+        if (!username || !target) {
+            return res.json({ success: false, error: 'Chybí údaje' });
+        }
+        const result = await banUser(target, username, reason || '');
+        res.json(result);
+    } catch (error) {
+        res.json({ success: false, error: 'Server error' });
+    }
+});
+
+// API endpoint - odbanovat uživatele
+app.post('/api/mylinks/unban', async (req, res) => {
+    try {
+        const { username, target } = req.body;
+        if (!username || !target) {
+            return res.json({ success: false, error: 'Chybí údaje' });
+        }
+        const result = await unbanUser(target, username);
+        res.json(result);
+    } catch (error) {
+        res.json({ success: false, error: 'Server error' });
     }
 });
 
