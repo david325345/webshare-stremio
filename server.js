@@ -1575,7 +1575,7 @@ ${languages.join('+')} 📺 ${qualityStr} 💾${sizeStr}`;
                         
                         const stream = {
                             name: streamName,
-                            title: `${manual.display_name || fileInfo.name || 'Manuální link'}\n${fileInfo.name}`,
+                            title: `${manual.display_name || 'Manuální link'}`,
                             url: link,
                             behaviorHints: {
                                 bingeGroup: 'webshare-manual',
