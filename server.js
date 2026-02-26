@@ -1570,12 +1570,12 @@ async function handleStreamRequest(args) {
                         if (nameUpper.includes('SK') || nameUpper.includes('SLOVAK')) languages.push('🇸🇰 SK');
                         if (nameUpper.includes('EN') || nameUpper.includes('ENGLISH')) languages.push('🇬🇧 EN');
                         
-                        const streamName = `📌 Webshare
-${languages.join('+')} 📺 ${qualityStr} 💾${sizeStr}`;
+                        const langStr = languages.length > 0 ? languages.join('+') + ' ' : '';
+                        const streamName = `📌 Webshare ${langStr}📺${qualityStr} 💾${sizeStr}`;
                         
                         const stream = {
                             name: streamName,
-                            title: `${manual.display_name || 'Manuální link'}`,
+                            title: `📌 ${manual.display_name || 'Manuální link'}`,
                             url: link,
                             behaviorHints: {
                                 bingeGroup: 'webshare-manual',
