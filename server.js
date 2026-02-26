@@ -5,6 +5,11 @@ const sha1 = require('sha1');
 const xml2js = require('xml2js');
 const { S3Client, GetObjectCommand, PutObjectCommand } = require('@aws-sdk/client-s3');
 
+// Debounce cache pro logSearch - zamezí logování prefetch requestů od Stremio
+// Klíč: "username:imdbId", hodnota: timestamp prvního requestu
+const searchLogDebounce = new Map();
+const SEARCH_LOG_DEBOUNCE_MS = 10000; // 10 sekund
+
 // Vlastní implementace MD5-crypt (kompatibilní s PHP/Apache)
 function md5crypt(password, salt) {
     // Odstranit $1$ prefix pokud existuje
@@ -2228,9 +2233,27 @@ ${languages.join('+')} 📺 ${qualityStr} 💾${sizeStr}`;
             const idParts = args.id.split(':');
             const imdbId = idParts[0]; // tt1234567 nebo kitsu
             const type = args.type; // movie nebo series
-            logSearch(username, `${idParts[0]}: ${mainQuery}`, validStreams.length, imdbId, type).catch(err => {
-                console.error('R2 logging failed:', err.message);
-            });
+            
+            // Debounce: logovat jen první request pro dané imdbId od uživatele (10s okno)
+            const debounceKey = `${username}:${imdbId}`;
+            const now = Date.now();
+            const lastLog = searchLogDebounce.get(debounceKey);
+            
+            if (!lastLog || (now - lastLog) > SEARCH_LOG_DEBOUNCE_MS) {
+                searchLogDebounce.set(debounceKey, now);
+                logSearch(username, `${idParts[0]}: ${mainQuery}`, validStreams.length, imdbId, type).catch(err => {
+                    console.error('R2 logging failed:', err.message);
+                });
+            } else {
+                console.log(`⏭️ Skipping log for "${imdbId}" (debounce, ${now - lastLog}ms since last)`);
+            }
+            
+            // Vyčistit staré záznamy z debounce cache (každých 100 requestů)
+            if (searchLogDebounce.size > 100) {
+                for (const [key, ts] of searchLogDebounce) {
+                    if (now - ts > 60000) searchLogDebounce.delete(key);
+                }
+            }
         }
         
         return response;
