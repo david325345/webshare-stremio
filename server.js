@@ -282,6 +282,7 @@ async function logSearch(username, query, resultsCount, imdbId, type, displayNam
         // Uložit display name (originální název s diakritikou/romaji)
         if (displayName && !userSearches[query].display_name) {
             userSearches[query].display_name = displayName;
+            console.log(`  📝 Display name set: "${displayName}"`);
         }
         
         await putToR2(userKey, userSearches);
@@ -994,6 +995,10 @@ async function handleStreamRequest(args) {
         const saltedPassword = await saltPassword(username, password);
         const token = await login(username, saltedPassword);
         
+        // Proměnné pro display name v historii (vyplní se v TMDB větvi)
+        let _tmdbNames = null;
+        let _isJapaneseContent = false;
+        
         // NOVÉ: Handling pro webshare- ID (z direct search)
         if (args.id.startsWith('webshare-')) {
             console.log('Direct search file request');
@@ -1150,6 +1155,8 @@ async function handleStreamRequest(args) {
             const tmdbResult = await getTMDBNames(args.id.split(':')[0], args.type, args.config.tmdb_api_key);
             const tmdbNames = tmdbResult.names || [];
             const isJapaneseContent = tmdbResult.isJapanese || false;
+            _tmdbNames = tmdbNames;
+            _isJapaneseContent = isJapaneseContent;
             
             let names = [];
             let primarySource = 'tmdb';
@@ -2377,12 +2384,12 @@ ${languages.join('+')} 📺 ${qualityStr} 💾${sizeStr}`;
                 searchLogDebounce.set(debounceKey, now);
                 // Sestavit display name z originálního TMDB názvu
                 let displayName = null;
-                if (typeof tmdbNames !== 'undefined' && tmdbNames && tmdbNames.length > 0) {
+                if (_tmdbNames && _tmdbNames.length > 0) {
                     // Pro anime: anglický název (romaji přepis), pro ostatní: CZ název s diakritikou
-                    if (typeof isJapaneseContent !== 'undefined' && isJapaneseContent && tmdbNames.length > 1) {
-                        displayName = tmdbNames[tmdbNames.length - 1]; // EN název např. "Frieren: Beyond Journey's End"
+                    if (_isJapaneseContent && _tmdbNames.length > 1) {
+                        displayName = _tmdbNames[_tmdbNames.length - 1]; // EN název např. "Frieren: Beyond Journey's End"
                     } else {
-                        displayName = tmdbNames[0]; // CZ název např. "Pelíšky"
+                        displayName = _tmdbNames[0]; // CZ název např. "Pelíšky"
                     }
                     // Přidat epizodu pokud je seriál
                     if (args.type === 'series' && args.id.includes(':')) {
