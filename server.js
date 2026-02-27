@@ -1637,8 +1637,8 @@ async function handleStreamRequest(args) {
                         }
                         console.log(`[Manual ${i}] ✅ File info:`, fileInfo.name);
                         
-                        console.log(`[Manual ${i}] Fetching link (stealth)...`);
-                        const link = await getFileLinkStealth(manual.webshare_ident, token);
+                        console.log(`[Manual ${i}] Fetching link...`);
+                        const link = await getFileLink(manual.webshare_ident, token);
                         if (!link) {
                             console.log(`[Manual ${i}] ❌ No link returned - marking as broken`);
                             await markLinkAsBroken(queryKey, i);
