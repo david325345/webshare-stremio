@@ -656,41 +656,15 @@ async function clearWebshareHistory(token, ids) {
 
 // Po přehrání manuálního linku smazat záznam z Webshare historie
 function cleanManualLinkFromHistory(token, ident) {
-    const MAX_ATTEMPTS = 10;
-    let attempt = 0;
-
-    setTimeout(async function poll() {
-        attempt++;
+    setTimeout(async () => {
         try {
+            console.log(`🧹 [${ident}] Clearing Webshare history after 3s...`);
             const params = `wst=${encodeURIComponent(token)}`;
-            const resp = await needle('post', 'https://webshare.cz/api/running_downloads/', params, { headers });
+            const resp = await needle('post', 'https://webshare.cz/api/clear_history/', params, { headers });
             const status = resp?.body?.children?.find(el => el.name === 'status')?.value;
-            if (status !== 'OK') { if (attempt < MAX_ATTEMPTS) setTimeout(poll, 3000); return; }
-
-            const downloads = (resp.body.children || []).filter(el => el.name === 'download');
-            const identList = downloads.map(d => {
-                const file = d.children?.find(el => el.name === 'file');
-                return file?.children?.find(el => el.name === 'ident')?.value;
-            });
-
-            if (identList.includes(ident)) {
-                console.log(`🧹 [${ident}] Found in running downloads (attempt ${attempt}), sending clear_history with ident...`);
-                const clearParams = `ids=${encodeURIComponent(ident)}&wst=${encodeURIComponent(token)}`;
-                const clearResp = await needle('post', 'https://webshare.cz/api/clear_history/', clearParams, { headers });
-                const clearStatus = clearResp?.body?.children?.find(el => el.name === 'status')?.value;
-                const clearCode = clearResp?.body?.children?.find(el => el.name === 'code')?.value;
-                const clearMsg = clearResp?.body?.children?.find(el => el.name === 'message')?.value;
-                console.log(`🧹 [${ident}] clear_history: ${clearStatus} ${clearCode || ''} ${clearMsg || ''}`);
-                return; // Hotovo
-            }
-
-            if (attempt < MAX_ATTEMPTS) {
-                setTimeout(poll, 3000);
-            } else {
-                console.log(`🧹 [${ident}] Not found in running downloads after ${MAX_ATTEMPTS} attempts, giving up`);
-            }
+            console.log(`🧹 [${ident}] clear_history: ${status}`);
         } catch (error) {
-            console.error(`🧹 [${ident}] Error:`, error.message);
+            console.error(`🧹 [${ident}] clear_history error:`, error.message);
         }
     }, 3000);
 }
