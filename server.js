@@ -651,44 +651,18 @@ async function clearWebshareHistory(token, ids) {
 }
 
 // Po přehrání manuálního linku smazat záznam z Webshare historie
-async function cleanManualLinkFromHistory(token, ident) {
-    const INTERVAL = 10000; // 10s
-    const MAX_ATTEMPTS = 12; // 12 × 10s = 2 minuty
-    let attempt = 0;
-    const startTime = Date.now();
-    
-    console.log(`🧹 Starting history cleanup polling for: ${ident} (every 10s, max 2min)`);
-    
-    const timer = setInterval(async () => {
-        attempt++;
-        const elapsed = Math.round((Date.now() - startTime) / 1000);
+function cleanManualLinkFromHistory(token, ident) {
+    setTimeout(async () => {
         try {
-            console.log(`🧹 [${ident}] Attempt ${attempt}/${MAX_ATTEMPTS} (${elapsed}s elapsed) - checking history...`);
-            const history = await getWebshareHistory(token, 10);
-            console.log(`🧹 [${ident}] History returned ${history.length} records`);
-            
-            const record = history.find(h => h.ident === ident);
-            if (record) {
-                console.log(`🧹 [${ident}] ✅ FOUND in history after ${elapsed}s! "${record.name}" (download_id: ${record.download_id})`);
-                clearInterval(timer);
-                const ok = await clearWebshareHistory(token, [record.download_id]);
-                if (ok) {
-                    console.log(`🧹 [${ident}] ✅ DELETED from Webshare history after ${elapsed}s`);
-                } else {
-                    console.log(`🧹 [${ident}] ❌ Failed to delete from history`);
-                }
-            } else {
-                console.log(`🧹 [${ident}] Not found yet (attempt ${attempt}/${MAX_ATTEMPTS})`);
-            }
+            console.log(`🧹 [${ident}] Clearing entire Webshare history after 3s...`);
+            const params = `wst=${encodeURIComponent(token)}`;
+            const resp = await needle('post', 'https://webshare.cz/api/clear_history/', params, { headers });
+            const status = resp?.body?.children?.find(el => el.name === 'status')?.value;
+            console.log(`🧹 [${ident}] clear_history response: ${status}`);
         } catch (error) {
-            console.error(`🧹 [${ident}] Error on attempt ${attempt}:`, error.message);
+            console.error(`🧹 [${ident}] clear_history error:`, error.message);
         }
-        
-        if (attempt >= MAX_ATTEMPTS) {
-            console.log(`🧹 [${ident}] Gave up after ${MAX_ATTEMPTS} attempts (${elapsed}s). User probably didn't play this stream.`);
-            clearInterval(timer);
-        }
-    }, INTERVAL);
+    }, 3000);
 }
 
 function formatSize(bytes) {
