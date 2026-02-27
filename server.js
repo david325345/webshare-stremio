@@ -2459,18 +2459,31 @@ async function handleStreamRequest(args) {
                 // Sestavit display name z originálního TMDB/Kitsu názvu
                 let displayName = null;
                 if (_tmdbNames && _tmdbNames.length > 0) {
-                    if (_isJapaneseContent) {
-                        // Pro anime: první název (canonicalTitle z Kitsu nebo EN z TMDB)
+                    if (args.id.startsWith('kitsu:')) {
+                        // Kitsu: canonicalTitle (EN romaji) = první název
                         displayName = _tmdbNames[0];
+                    } else if (_isJapaneseContent && _tmdbNames.length > 1) {
+                        // TMDB anime: EN název = poslední
+                        displayName = _tmdbNames[_tmdbNames.length - 1];
                     } else {
-                        // Pro ostatní: CZ název s diakritikou
+                        // Ostatní: CZ název s diakritikou = první
                         displayName = _tmdbNames[0];
                     }
                     // Přidat epizodu pokud je seriál
-                    if (args.type === 'series' && args.id.includes(':')) {
-                        const ep = args.id.split(':');
-                        if (ep[1] && ep[2]) {
-                            displayName += ' S' + String(ep[1]).padStart(2, '0') + 'E' + String(ep[2]).padStart(2, '0');
+                    if (args.type === 'series') {
+                        if (args.id.startsWith('kitsu:')) {
+                            // Kitsu formát: kitsu:ID:episode → S01Exx
+                            const kitsuParts = args.id.split(':');
+                            const ep = kitsuParts[2];
+                            if (ep) {
+                                displayName += ' S01E' + String(ep).padStart(2, '0');
+                            }
+                        } else if (args.id.includes(':')) {
+                            // IMDB formát: tt1234567:season:episode
+                            const ep = args.id.split(':');
+                            if (ep[1] && ep[2]) {
+                                displayName += ' S' + String(ep[1]).padStart(2, '0') + 'E' + String(ep[2]).padStart(2, '0');
+                            }
                         }
                     }
                 }
