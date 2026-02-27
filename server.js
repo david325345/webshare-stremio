@@ -722,6 +722,9 @@ async function getKitsuNames(kitsuId) {
             }
             if (attrs.abbreviatedTitles) names.push(...attrs.abbreviatedTitles);
             
+            // EN název pro display v historii (preferovat en, fallback en_jp, fallback canonicalTitle)
+            const enTitle = attrs.titles?.en || attrs.titles?.en_jp || attrs.canonicalTitle || null;
+            
             // Získat rok vydání
             let year = null;
             if (attrs.startDate) {
@@ -729,14 +732,15 @@ async function getKitsuNames(kitsuId) {
             }
             
             console.log('Kitsu names:', names);
+            console.log('Kitsu EN title:', enTitle);
             console.log('Kitsu year:', year);
             const poster = attrs.posterImage?.original || attrs.posterImage?.large || null;
-            return { names: [...new Set(names)], year, poster }; // Odstranění duplicit + rok + poster
+            return { names: [...new Set(names)], year, poster, enTitle }; // Odstranění duplicit + rok + poster
         }
     } catch (error) {
         console.error('Error getting names from Kitsu:', error.message);
     }
-    return { names: [], year: null, poster: null };
+    return { names: [], year: null, poster: null, enTitle: null };
 }
 
 // AniList GraphQL API pro získání všech variant názvů anime z názvu
@@ -1143,7 +1147,8 @@ async function handleStreamRequest(args) {
             kitsuYear = kitsuData.year;
             
             // Pro display name a poster v historii
-            _tmdbNames = names.length > 0 ? names : null;
+            // Použít EN název z Kitsu jako display name
+            _tmdbNames = kitsuData.enTitle ? [kitsuData.enTitle] : (names.length > 0 ? names : null);
             _isJapaneseContent = true;
             _kitsuPoster = kitsuData.poster || null;
             
@@ -2460,7 +2465,7 @@ async function handleStreamRequest(args) {
                 let displayName = null;
                 if (_tmdbNames && _tmdbNames.length > 0) {
                     if (args.id.startsWith('kitsu:')) {
-                        // Kitsu: canonicalTitle (EN romaji) = první název
+                        // Kitsu: EN název z Kitsu API
                         displayName = _tmdbNames[0];
                     } else if (_isJapaneseContent && _tmdbNames.length > 1) {
                         // TMDB anime: EN název = poslední
