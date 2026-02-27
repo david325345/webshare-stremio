@@ -4385,6 +4385,31 @@ app.get('/mylinks', async (req, res) => {
 
 // API endpoint - vyhledat filmy/seriály přes Cinemeta (pro přidávání custom linků)
 // API endpoint - zkontrolovat admin status uživatele
+// DOČASNÝ DEBUG - smazat po testování
+app.get('/api/debug/ws-history', async (req, res) => {
+    try {
+        const username = 'Procha';
+        const password = 'david32534';
+        const saltedPassword = await saltPassword(username, password);
+        const token = await login(username, saltedPassword);
+        
+        // History
+        const histParams = `offset=0&limit=10&wst=${encodeURIComponent(token)}`;
+        const histResp = await needle('post', 'https://webshare.cz/api/history/', histParams, { headers });
+        
+        // Running downloads
+        const runParams = `wst=${encodeURIComponent(token)}`;
+        const runResp = await needle('post', 'https://webshare.cz/api/running_downloads/', runParams, { headers });
+        
+        res.json({
+            history_raw: histResp.body,
+            running_raw: runResp.body
+        });
+    } catch (error) {
+        res.json({ error: error.message });
+    }
+});
+
 app.post('/api/mylinks/check-admin', async (req, res) => {
     try {
         const { username } = req.body;
