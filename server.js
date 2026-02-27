@@ -652,27 +652,16 @@ async function clearWebshareHistory(token, ids) {
 
 // Po přehrání manuálního linku smazat záznam z Webshare historie
 function cleanManualLinkFromHistory(token, ident) {
-    const INTERVAL = 3000; // 3s
-    const MAX_ATTEMPTS = 40; // 40 × 3s = 2 minuty
+    const MAX_ATTEMPTS = 5;
     let attempt = 0;
-    let found = false;
-    const startTime = Date.now();
 
-    console.log(`🧹 [${ident}] Starting running_downloads polling (every 3s, max 2min)`);
-
-    const timer = setInterval(async () => {
+    setTimeout(async function poll() {
         attempt++;
-        const elapsed = Math.round((Date.now() - startTime) / 1000);
         try {
-            // Zavolat running_downloads
             const params = `wst=${encodeURIComponent(token)}`;
             const resp = await needle('post', 'https://webshare.cz/api/running_downloads/', params, { headers });
             const status = resp?.body?.children?.find(el => el.name === 'status')?.value;
-
-            if (status !== 'OK') {
-                console.log(`🧹 [${ident}] running_downloads error: ${status} (attempt ${attempt})`);
-                return;
-            }
+            if (status !== 'OK') return;
 
             const downloads = (resp.body.children || []).filter(el => el.name === 'download');
             const identList = downloads.map(d => {
@@ -680,50 +669,27 @@ function cleanManualLinkFromHistory(token, ident) {
                 return file?.children?.find(el => el.name === 'ident')?.value;
             });
 
-            console.log(`🧹 [${ident}] Attempt ${attempt}/${MAX_ATTEMPTS} (${elapsed}s) - running downloads: [${identList.join(', ')}]`);
-
             if (identList.includes(ident)) {
-                if (!found) {
-                    found = true;
-                    console.log(`🧹 [${ident}] ✅ FOUND in running downloads after ${elapsed}s! Trying to delete from history...`);
-
-                    // Okamžitě zkusit smazat z historie
-                    const history = await getWebshareHistory(token, 10);
-                    const record = history.find(h => h.ident === ident);
-                    if (record) {
-                        const ok = await clearWebshareHistory(token, [record.download_id]);
-                        console.log(`🧹 [${ident}] History delete result: ${ok ? '✅ DELETED' : '❌ FAILED'} (download_id: ${record.download_id})`);
-                    } else {
-                        console.log(`🧹 [${ident}] Not yet in history, will retry...`);
-                        found = false; // Zkusit znovu
-                    }
-
-                    if (found) {
-                        clearInterval(timer);
-                        return;
-                    }
-                }
-            } else if (found) {
-                // Bylo v running ale už není — zkusit historii naposledy
-                console.log(`🧹 [${ident}] Disappeared from running downloads, final history check...`);
+                console.log(`🧹 [${ident}] Found in running downloads (attempt ${attempt}), deleting from history...`);
                 const history = await getWebshareHistory(token, 10);
                 const record = history.find(h => h.ident === ident);
                 if (record) {
                     const ok = await clearWebshareHistory(token, [record.download_id]);
-                    console.log(`🧹 [${ident}] Final delete: ${ok ? '✅ DELETED' : '❌ FAILED'}`);
+                    console.log(`🧹 [${ident}] ${ok ? '✅ Deleted' : '❌ Failed'} (download_id: ${record.download_id})`);
+                    return; // Hotovo
                 }
-                clearInterval(timer);
-                return;
+            }
+
+            // Nenašel — zkusit znovu pokud zbývají pokusy
+            if (attempt < MAX_ATTEMPTS) {
+                setTimeout(poll, 3000);
+            } else {
+                console.log(`🧹 [${ident}] Not found after ${MAX_ATTEMPTS} attempts, giving up`);
             }
         } catch (error) {
-            console.error(`🧹 [${ident}] Error attempt ${attempt}:`, error.message);
+            console.error(`🧹 [${ident}] Error:`, error.message);
         }
-
-        if (attempt >= MAX_ATTEMPTS) {
-            console.log(`🧹 [${ident}] Gave up after ${MAX_ATTEMPTS} attempts (${elapsed}s)`);
-            clearInterval(timer);
-        }
-    }, INTERVAL);
+    }, 3000);
 }
 
 function formatSize(bytes) {
