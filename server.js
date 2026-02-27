@@ -652,17 +652,78 @@ async function clearWebshareHistory(token, ids) {
 
 // Po přehrání manuálního linku smazat záznam z Webshare historie
 function cleanManualLinkFromHistory(token, ident) {
-    setTimeout(async () => {
+    const INTERVAL = 3000; // 3s
+    const MAX_ATTEMPTS = 40; // 40 × 3s = 2 minuty
+    let attempt = 0;
+    let found = false;
+    const startTime = Date.now();
+
+    console.log(`🧹 [${ident}] Starting running_downloads polling (every 3s, max 2min)`);
+
+    const timer = setInterval(async () => {
+        attempt++;
+        const elapsed = Math.round((Date.now() - startTime) / 1000);
         try {
-            console.log(`🧹 [${ident}] Clearing entire Webshare history after 3s...`);
+            // Zavolat running_downloads
             const params = `wst=${encodeURIComponent(token)}`;
-            const resp = await needle('post', 'https://webshare.cz/api/clear_history/', params, { headers });
+            const resp = await needle('post', 'https://webshare.cz/api/running_downloads/', params, { headers });
             const status = resp?.body?.children?.find(el => el.name === 'status')?.value;
-            console.log(`🧹 [${ident}] clear_history response: ${status}`);
+
+            if (status !== 'OK') {
+                console.log(`🧹 [${ident}] running_downloads error: ${status} (attempt ${attempt})`);
+                return;
+            }
+
+            const downloads = (resp.body.children || []).filter(el => el.name === 'download');
+            const identList = downloads.map(d => {
+                const file = d.children?.find(el => el.name === 'file');
+                return file?.children?.find(el => el.name === 'ident')?.value;
+            });
+
+            console.log(`🧹 [${ident}] Attempt ${attempt}/${MAX_ATTEMPTS} (${elapsed}s) - running downloads: [${identList.join(', ')}]`);
+
+            if (identList.includes(ident)) {
+                if (!found) {
+                    found = true;
+                    console.log(`🧹 [${ident}] ✅ FOUND in running downloads after ${elapsed}s! Trying to delete from history...`);
+
+                    // Okamžitě zkusit smazat z historie
+                    const history = await getWebshareHistory(token, 10);
+                    const record = history.find(h => h.ident === ident);
+                    if (record) {
+                        const ok = await clearWebshareHistory(token, [record.download_id]);
+                        console.log(`🧹 [${ident}] History delete result: ${ok ? '✅ DELETED' : '❌ FAILED'} (download_id: ${record.download_id})`);
+                    } else {
+                        console.log(`🧹 [${ident}] Not yet in history, will retry...`);
+                        found = false; // Zkusit znovu
+                    }
+
+                    if (found) {
+                        clearInterval(timer);
+                        return;
+                    }
+                }
+            } else if (found) {
+                // Bylo v running ale už není — zkusit historii naposledy
+                console.log(`🧹 [${ident}] Disappeared from running downloads, final history check...`);
+                const history = await getWebshareHistory(token, 10);
+                const record = history.find(h => h.ident === ident);
+                if (record) {
+                    const ok = await clearWebshareHistory(token, [record.download_id]);
+                    console.log(`🧹 [${ident}] Final delete: ${ok ? '✅ DELETED' : '❌ FAILED'}`);
+                }
+                clearInterval(timer);
+                return;
+            }
         } catch (error) {
-            console.error(`🧹 [${ident}] clear_history error:`, error.message);
+            console.error(`🧹 [${ident}] Error attempt ${attempt}:`, error.message);
         }
-    }, 3000);
+
+        if (attempt >= MAX_ATTEMPTS) {
+            console.log(`🧹 [${ident}] Gave up after ${MAX_ATTEMPTS} attempts (${elapsed}s)`);
+            clearInterval(timer);
+        }
+    }, INTERVAL);
 }
 
 function formatSize(bytes) {
