@@ -586,9 +586,9 @@ async function getFileLink(ident, token) {
     return null;
 }
 
-// Stealth verze bez download_type — pro custom linky (nezapisuje se do historie?)
+// Stealth verze s device parametry — pro custom linky
 async function getFileLinkStealth(ident, token) {
-    const params = `ident=${encodeURIComponent(ident)}&force_https=1&wst=${encodeURIComponent(token)}`;
+    const params = `ident=${encodeURIComponent(ident)}&download_type=video_stream&device_uuid=stremio-addon&device_vendor=Stremio&device_model=WebshareAddon&force_https=1&wst=${encodeURIComponent(token)}`;
     const resp = await needle('post', 'https://webshare.cz/api/file_link/', params, { headers });
     
     const status = resp?.body?.children?.find(el => el.name == 'status')?.value;
