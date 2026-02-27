@@ -1666,7 +1666,7 @@ async function handleStreamRequest(args) {
                 if (manualLinkStreams.length > 0) {
                     const manualIdents = linksToProcess.map(m => m.webshare_ident);
                     manualIdents.forEach(ident => {
-                        cleanManualLinkFromHistory(token, ident, 5000);
+                        cleanManualLinkFromHistory(token, ident, 15000);
                     });
                 }
             }
