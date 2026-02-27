@@ -586,6 +586,21 @@ async function getFileLink(ident, token) {
     return null;
 }
 
+// Stealth verze bez download_type — pro custom linky (nezapisuje se do historie?)
+async function getFileLinkStealth(ident, token) {
+    const params = `ident=${encodeURIComponent(ident)}&force_https=1&wst=${encodeURIComponent(token)}`;
+    const resp = await needle('post', 'https://webshare.cz/api/file_link/', params, { headers });
+    
+    const status = resp?.body?.children?.find(el => el.name == 'status')?.value;
+    if (status == 'OK') {
+        return resp.body.children.find(el => el.name == 'link').value;
+    }
+    
+    const errorMsg = resp?.body?.children?.find(el => el.name == 'message')?.value;
+    console.log(`getFileLinkStealth failed for ${ident}: status=${status}, error=${errorMsg}`);
+    return null;
+}
+
 async function getFileInfo(ident, token) {
     const params = `ident=${encodeURIComponent(ident)}&wst=${encodeURIComponent(token)}`;
     const resp = await needle('post', 'https://webshare.cz/api/file_info/', params, { headers });
@@ -1622,8 +1637,8 @@ async function handleStreamRequest(args) {
                         }
                         console.log(`[Manual ${i}] ✅ File info:`, fileInfo.name);
                         
-                        console.log(`[Manual ${i}] Fetching link...`);
-                        const link = await getFileLink(manual.webshare_ident, token);
+                        console.log(`[Manual ${i}] Fetching link (stealth)...`);
+                        const link = await getFileLinkStealth(manual.webshare_ident, token);
                         if (!link) {
                             console.log(`[Manual ${i}] ❌ No link returned - marking as broken`);
                             await markLinkAsBroken(queryKey, i);
