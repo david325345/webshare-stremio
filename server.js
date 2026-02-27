@@ -651,27 +651,44 @@ async function clearWebshareHistory(token, ids) {
 }
 
 // Po přehrání manuálního linku smazat záznam z Webshare historie
-async function cleanManualLinkFromHistory(token, ident, delay = 5000) {
-    setTimeout(async () => {
+async function cleanManualLinkFromHistory(token, ident) {
+    const INTERVAL = 10000; // 10s
+    const MAX_ATTEMPTS = 12; // 12 × 10s = 2 minuty
+    let attempt = 0;
+    const startTime = Date.now();
+    
+    console.log(`🧹 Starting history cleanup polling for: ${ident} (every 10s, max 2min)`);
+    
+    const timer = setInterval(async () => {
+        attempt++;
+        const elapsed = Math.round((Date.now() - startTime) / 1000);
         try {
-            console.log(`🧹 Checking Webshare history for manual link: ${ident}`);
+            console.log(`🧹 [${ident}] Attempt ${attempt}/${MAX_ATTEMPTS} (${elapsed}s elapsed) - checking history...`);
             const history = await getWebshareHistory(token, 10);
+            console.log(`🧹 [${ident}] History returned ${history.length} records`);
+            
             const record = history.find(h => h.ident === ident);
             if (record) {
-                console.log(`🧹 Found in history: "${record.name}" (download_id: ${record.download_id})`);
+                console.log(`🧹 [${ident}] ✅ FOUND in history after ${elapsed}s! "${record.name}" (download_id: ${record.download_id})`);
+                clearInterval(timer);
                 const ok = await clearWebshareHistory(token, [record.download_id]);
                 if (ok) {
-                    console.log(`✅ Removed from Webshare history: "${record.name}"`);
+                    console.log(`🧹 [${ident}] ✅ DELETED from Webshare history after ${elapsed}s`);
                 } else {
-                    console.log(`❌ Failed to remove from Webshare history`);
+                    console.log(`🧹 [${ident}] ❌ Failed to delete from history`);
                 }
             } else {
-                console.log(`ℹ️ Manual link ${ident} not found in recent history (may not have started yet)`);
+                console.log(`🧹 [${ident}] Not found yet (attempt ${attempt}/${MAX_ATTEMPTS})`);
             }
         } catch (error) {
-            console.error('cleanManualLinkFromHistory error:', error.message);
+            console.error(`🧹 [${ident}] Error on attempt ${attempt}:`, error.message);
         }
-    }, delay);
+        
+        if (attempt >= MAX_ATTEMPTS) {
+            console.log(`🧹 [${ident}] Gave up after ${MAX_ATTEMPTS} attempts (${elapsed}s). User probably didn't play this stream.`);
+            clearInterval(timer);
+        }
+    }, INTERVAL);
 }
 
 function formatSize(bytes) {
@@ -1666,7 +1683,7 @@ async function handleStreamRequest(args) {
                 if (manualLinkStreams.length > 0) {
                     const manualIdents = linksToProcess.map(m => m.webshare_ident);
                     manualIdents.forEach(ident => {
-                        cleanManualLinkFromHistory(token, ident, 15000);
+                        cleanManualLinkFromHistory(token, ident);
                     });
                 }
             }
