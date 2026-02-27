@@ -247,7 +247,7 @@ async function putToR2(key, data) {
     }
 }
 
-async function logSearch(username, query, resultsCount, imdbId, type, displayName) {
+async function logSearch(username, query, resultsCount, imdbId, type, displayName, fallbackPoster) {
     try {
         const userKey = `user-searches/${username}.json`;
         let userSearches = await getFromR2(userKey) || {};
@@ -261,6 +261,10 @@ async function logSearch(username, query, resultsCount, imdbId, type, displayNam
             } catch (err) {
                 console.log('Failed to fetch poster:', err.message);
             }
+        }
+        // Fallback poster (Kitsu)
+        if (!poster && fallbackPoster) {
+            poster = fallbackPoster;
         }
         
         if (!userSearches[query]) {
@@ -652,7 +656,7 @@ async function clearWebshareHistory(token, ids) {
 
 // Po přehrání manuálního linku smazat záznam z Webshare historie
 function cleanManualLinkFromHistory(token, ident) {
-    const MAX_ATTEMPTS = 5;
+    const MAX_ATTEMPTS = 10;
     let attempt = 0;
 
     setTimeout(async function poll() {
@@ -661,7 +665,7 @@ function cleanManualLinkFromHistory(token, ident) {
             const params = `wst=${encodeURIComponent(token)}`;
             const resp = await needle('post', 'https://webshare.cz/api/running_downloads/', params, { headers });
             const status = resp?.body?.children?.find(el => el.name === 'status')?.value;
-            if (status !== 'OK') return;
+            if (status !== 'OK') { if (attempt < MAX_ATTEMPTS) setTimeout(poll, 3000); return; }
 
             const downloads = (resp.body.children || []).filter(el => el.name === 'download');
             const identList = downloads.map(d => {
@@ -670,21 +674,20 @@ function cleanManualLinkFromHistory(token, ident) {
             });
 
             if (identList.includes(ident)) {
-                console.log(`🧹 [${ident}] Found in running downloads (attempt ${attempt}), deleting from history...`);
-                const history = await getWebshareHistory(token, 10);
-                const record = history.find(h => h.ident === ident);
-                if (record) {
-                    const ok = await clearWebshareHistory(token, [record.download_id]);
-                    console.log(`🧹 [${ident}] ${ok ? '✅ Deleted' : '❌ Failed'} (download_id: ${record.download_id})`);
-                    return; // Hotovo
-                }
+                console.log(`🧹 [${ident}] Found in running downloads (attempt ${attempt}), sending clear_history with ident...`);
+                const clearParams = `ids=${encodeURIComponent(ident)}&wst=${encodeURIComponent(token)}`;
+                const clearResp = await needle('post', 'https://webshare.cz/api/clear_history/', clearParams, { headers });
+                const clearStatus = clearResp?.body?.children?.find(el => el.name === 'status')?.value;
+                const clearCode = clearResp?.body?.children?.find(el => el.name === 'code')?.value;
+                const clearMsg = clearResp?.body?.children?.find(el => el.name === 'message')?.value;
+                console.log(`🧹 [${ident}] clear_history: ${clearStatus} ${clearCode || ''} ${clearMsg || ''}`);
+                return; // Hotovo
             }
 
-            // Nenašel — zkusit znovu pokud zbývají pokusy
             if (attempt < MAX_ATTEMPTS) {
                 setTimeout(poll, 3000);
             } else {
-                console.log(`🧹 [${ident}] Not found after ${MAX_ATTEMPTS} attempts, giving up`);
+                console.log(`🧹 [${ident}] Not found in running downloads after ${MAX_ATTEMPTS} attempts, giving up`);
             }
         } catch (error) {
             console.error(`🧹 [${ident}] Error:`, error.message);
@@ -753,12 +756,13 @@ async function getKitsuNames(kitsuId) {
             
             console.log('Kitsu names:', names);
             console.log('Kitsu year:', year);
-            return { names: [...new Set(names)], year }; // Odstranění duplicit + rok
+            const poster = attrs.posterImage?.original || attrs.posterImage?.large || null;
+            return { names: [...new Set(names)], year, poster }; // Odstranění duplicit + rok + poster
         }
     } catch (error) {
         console.error('Error getting names from Kitsu:', error.message);
     }
-    return { names: [], year: null };
+    return { names: [], year: null, poster: null };
 }
 
 // AniList GraphQL API pro získání všech variant názvů anime z názvu
@@ -1077,9 +1081,10 @@ async function handleStreamRequest(args) {
         const saltedPassword = await saltPassword(username, password);
         const token = await login(username, saltedPassword);
         
-        // Proměnné pro display name v historii (vyplní se v TMDB větvi)
+        // Proměnné pro display name v historii (vyplní se v TMDB/Kitsu větvi)
         let _tmdbNames = null;
         let _isJapaneseContent = false;
+        let _kitsuPoster = null;
         
         // NOVÉ: Handling pro webshare- ID (z direct search)
         if (args.id.startsWith('webshare-')) {
@@ -1162,6 +1167,11 @@ async function handleStreamRequest(args) {
             const kitsuData = await getKitsuNames(kitsuId);
             const names = kitsuData.names;
             kitsuYear = kitsuData.year;
+            
+            // Pro display name a poster v historii
+            _tmdbNames = names.length > 0 ? names : null;
+            _isJapaneseContent = true;
+            _kitsuPoster = kitsuData.poster || null;
             
             console.log('Found names from Kitsu:', names);
 
@@ -2472,14 +2482,15 @@ async function handleStreamRequest(args) {
             
             if (!lastLog || (now - lastLog) > SEARCH_LOG_DEBOUNCE_MS) {
                 searchLogDebounce.set(debounceKey, now);
-                // Sestavit display name z originálního TMDB názvu
+                // Sestavit display name z originálního TMDB/Kitsu názvu
                 let displayName = null;
                 if (_tmdbNames && _tmdbNames.length > 0) {
-                    // Pro anime: anglický název (romaji přepis), pro ostatní: CZ název s diakritikou
-                    if (_isJapaneseContent && _tmdbNames.length > 1) {
-                        displayName = _tmdbNames[_tmdbNames.length - 1]; // EN název např. "Frieren: Beyond Journey's End"
+                    if (_isJapaneseContent) {
+                        // Pro anime: první název (canonicalTitle z Kitsu nebo EN z TMDB)
+                        displayName = _tmdbNames[0];
                     } else {
-                        displayName = _tmdbNames[0]; // CZ název např. "Pelíšky"
+                        // Pro ostatní: CZ název s diakritikou
+                        displayName = _tmdbNames[0];
                     }
                     // Přidat epizodu pokud je seriál
                     if (args.type === 'series' && args.id.includes(':')) {
@@ -2489,7 +2500,7 @@ async function handleStreamRequest(args) {
                         }
                     }
                 }
-                logSearch(username, `${idParts[0]}: ${mainQuery}`, validStreams.length, imdbId, type, displayName).catch(err => {
+                logSearch(username, `${idParts[0]}: ${mainQuery}`, validStreams.length, imdbId, type, displayName, _kitsuPoster).catch(err => {
                     console.error('R2 logging failed:', err.message);
                 });
             } else {
