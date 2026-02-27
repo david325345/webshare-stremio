@@ -610,6 +610,70 @@ async function getFileInfo(ident, token) {
 }
 
 // Formátování velikosti souboru
+
+// Získat historii stahování z Webshare
+async function getWebshareHistory(token, limit = 5) {
+    const params = `offset=0&limit=${limit}&wst=${encodeURIComponent(token)}`;
+    try {
+        const resp = await needle('post', 'https://webshare.cz/api/history/', params, { headers });
+        const status = resp?.body?.children?.find(el => el.name === 'status')?.value;
+        if (status !== 'OK') return [];
+        
+        const files = resp.body.children.filter(el => el.name === 'file');
+        return files.map(file => {
+            const ch = file.children || [];
+            return {
+                download_id: ch.find(el => el.name === 'download_id')?.value,
+                ident: ch.find(el => el.name === 'ident')?.value,
+                name: ch.find(el => el.name === 'name')?.value,
+                started_at: ch.find(el => el.name === 'started_at')?.value
+            };
+        });
+    } catch (error) {
+        console.error('getWebshareHistory error:', error.message);
+        return [];
+    }
+}
+
+// Smazat konkrétní záznamy z historie Webshare
+async function clearWebshareHistory(token, ids) {
+    const idsParam = ids.map(id => `ids=${encodeURIComponent(id)}`).join('&');
+    const params = `${idsParam}&wst=${encodeURIComponent(token)}`;
+    try {
+        const resp = await needle('post', 'https://webshare.cz/api/clear_history/', params, { headers });
+        const status = resp?.body?.children?.find(el => el.name === 'status')?.value;
+        console.log(`🗑️ clear_history response: ${status} (ids: ${ids.join(',')})`);
+        return status === 'OK';
+    } catch (error) {
+        console.error('clearWebshareHistory error:', error.message);
+        return false;
+    }
+}
+
+// Po přehrání manuálního linku smazat záznam z Webshare historie
+async function cleanManualLinkFromHistory(token, ident, delay = 5000) {
+    setTimeout(async () => {
+        try {
+            console.log(`🧹 Checking Webshare history for manual link: ${ident}`);
+            const history = await getWebshareHistory(token, 10);
+            const record = history.find(h => h.ident === ident);
+            if (record) {
+                console.log(`🧹 Found in history: "${record.name}" (download_id: ${record.download_id})`);
+                const ok = await clearWebshareHistory(token, [record.download_id]);
+                if (ok) {
+                    console.log(`✅ Removed from Webshare history: "${record.name}"`);
+                } else {
+                    console.log(`❌ Failed to remove from Webshare history`);
+                }
+            } else {
+                console.log(`ℹ️ Manual link ${ident} not found in recent history (may not have started yet)`);
+            }
+        } catch (error) {
+            console.error('cleanManualLinkFromHistory error:', error.message);
+        }
+    }, delay);
+}
+
 function formatSize(bytes) {
     if (bytes === 0) return '0 B';
     const k = 1024;
@@ -1597,6 +1661,14 @@ async function handleStreamRequest(args) {
                 
                 manualLinkStreams = results.filter(s => s !== null);
                 console.log(`Loaded ${manualLinkStreams.length}/${linksToProcess.length} manual link streams`);
+                
+                // Po 5s zkontrolovat Webshare historii a smazat záznamy manuálních linků
+                if (manualLinkStreams.length > 0) {
+                    const manualIdents = linksToProcess.map(m => m.webshare_ident);
+                    manualIdents.forEach(ident => {
+                        cleanManualLinkFromHistory(token, ident, 5000);
+                    });
+                }
             }
         }
 
