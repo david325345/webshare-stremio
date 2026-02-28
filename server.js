@@ -1050,7 +1050,7 @@ async function getTMDBNames(imdbId, type, apiKey) {
 
 
 // Stream handler funkce - použita jak builderem tak personal routes
-async function handleStreamRequest(args) {
+async function handleStreamRequest(args, req) {
     console.log('=== STREAM REQUEST ===');
     console.log('Full args:', JSON.stringify(args, null, 2));
     console.log('Type:', args.type);
@@ -1637,14 +1637,10 @@ async function handleStreamRequest(args) {
                         }
                         console.log(`[Manual ${i}] ✅ File info:`, fileInfo.name);
                         
-                        console.log(`[Manual ${i}] Fetching link...`);
-                        const link = await getFileLink(manual.webshare_ident, token);
-                        if (!link) {
-                            console.log(`[Manual ${i}] ❌ No link returned - marking as broken`);
-                            await markLinkAsBroken(queryKey, i);
-                            return null;
-                        }
-                        console.log(`[Manual ${i}] ✅ Link obtained`);
+                        // Proxy URL — stream jde přes addon server (nezapisuje se do WS historie)
+                        const baseUrl = req ? `${req.protocol}://${req.get('host')}` : (process.env.RENDER_EXTERNAL_URL || `http://localhost:${process.env.PORT || 7000}`);
+                        const proxyUrl = `${baseUrl}/proxy/${encodeURIComponent(token)}/${manual.webshare_ident}`;
+                        console.log(`[Manual ${i}] ✅ Proxy URL created`);
                         
                         const quality = detectQuality(fileInfo.name);
                         const qualityStr = quality.resolution || 'SD';
@@ -1662,7 +1658,7 @@ async function handleStreamRequest(args) {
                         const stream = {
                             name: streamName,
                             title: `📌 ${manual.display_name || 'Manuální link'}`,
-                            url: link,
+                            url: proxyUrl,
                             behaviorHints: {
                                 bingeGroup: 'webshare-manual',
                                 videoSize: fileInfo.size,
@@ -2767,6 +2763,70 @@ app.use((req, res, next) => {
 // Static files (logo)
 app.use(express.static(path.join(__dirname, 'public')));
 
+// Proxy endpoint pro custom linky — přeposílá stream z Webshare bez session (nezapisuje se do historie)
+app.get('/proxy/:token/:ident', async (req, res) => {
+    try {
+        const { token, ident } = req.params;
+        
+        // Získat dočasný link z Webshare
+        const link = await getFileLink(ident, decodeURIComponent(token));
+        if (!link) {
+            console.log(`🔀 Proxy: no link for ${ident}`);
+            return res.status(404).send('File not available');
+        }
+        
+        console.log(`🔀 Proxy: streaming ${ident}`);
+        
+        // Forwardovat Range header od Stremia
+        const proxyHeaders = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        };
+        if (req.headers.range) {
+            proxyHeaders['Range'] = req.headers.range;
+            console.log(`🔀 Proxy: Range ${req.headers.range}`);
+        }
+        
+        // Čistý GET na Webshare link — bez cookies, bez session (jako prohlížeč)
+        const https = require('https');
+        const http = require('http');
+        const urlModule = require('url');
+        const parsed = urlModule.parse(link);
+        const client = parsed.protocol === 'https:' ? https : http;
+        
+        const proxyReq = client.get({
+            hostname: parsed.hostname,
+            port: parsed.port,
+            path: parsed.path,
+            headers: proxyHeaders
+        }, (proxyRes) => {
+            console.log(`🔀 Proxy: response ${proxyRes.statusCode}, content-length: ${proxyRes.headers['content-length'] || 'unknown'}`);
+            
+            // Přeposlat status a hlavičky
+            res.writeHead(proxyRes.statusCode, {
+                'Content-Type': proxyRes.headers['content-type'] || 'video/mp4',
+                ...(proxyRes.headers['content-length'] && { 'Content-Length': proxyRes.headers['content-length'] }),
+                ...(proxyRes.headers['content-range'] && { 'Content-Range': proxyRes.headers['content-range'] }),
+                'Accept-Ranges': 'bytes'
+            });
+            
+            // Pipe data přímo
+            proxyRes.pipe(res);
+        });
+        
+        proxyReq.on('error', (err) => {
+            console.error(`🔀 Proxy request error for ${ident}:`, err.message);
+            if (!res.headersSent) res.status(500).send('Stream error');
+        });
+        
+        res.on('close', () => {
+            proxyReq.destroy();
+        });
+    } catch (error) {
+        console.error(`🔀 Proxy error:`, error.message);
+        if (!res.headersSent) res.status(500).send('Proxy error');
+    }
+});
+
 // Root route - installation page
 app.get('/', (req, res) => {
     res.send(`
@@ -3112,7 +3172,7 @@ app.get('/:userConfig/stream/:type/:id.json', async (req, res) => {
         console.log('ID:', args.id);
         
         // Zavoláme stream handler přímo
-        const result = await handleStreamRequest(args);
+        const result = await handleStreamRequest(args, req);
         
         res.setHeader('Content-Type', 'application/json');
         res.setHeader('Access-Control-Allow-Origin', '*');
